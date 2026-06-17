@@ -8,6 +8,21 @@ from experiment_controller import ExperimentController
 from startup_recovery import move_valid_runs_to_training, current_folder_has_contents, wipe_folder_contents, move_run_to_training
 from organism_menu import get_organism_options
 
+
+def format_elapsed(seconds) : 
+        """
+        Easy to read time format
+        """
+        seconds = int(seconds)
+        if seconds < 60 : 
+            return f"{seconds}s"
+        elif seconds < 3600 : # Minutes only but not hours 
+            minutes, secs = divmod(seconds, 60)
+            return f"{minutes}m {secs}s"
+        else : 
+            hours, remainder = divmod(seconds, 3600)
+            minutes, secs = divmod(remainder, 60)
+            return f"{hours}h {minutes}m {secs}s"
 class SensorGUI : 
     """
     Class for the GUI
@@ -15,7 +30,7 @@ class SensorGUI :
     def __init__(self, current_folder, training_folder):
         self.root = tk.Tk() # Create main Tkinter window
         self.root.title("Bioreactor Sensor")
-        self.root.geometry("500x400")
+        self.root.geometry("600x500")
 
         self.controller = ExperimentController()
 
@@ -36,6 +51,13 @@ class SensorGUI :
         self.status = tk.StringVar(value="Status: Idle")
         self.run_id = tk.StringVar(value="Run ID: None")
         self.error = tk.StringVar(value="Error: None")
+        
+        self.elapsed = tk.StringVar(value="Elasped: 0s")
+        self.capture_count = tk.StringVar(value="Captures: 0")
+        self.run_folder = tk.StringVar(value="Run folder: None")
+        self.last_saved_image = tk.StringVar(value="Last image: None")
+        self.last_message = tk.StringVar(value="Message: Idle")
+
         self.stop_requested = False
 
         self.build_widgets()
@@ -125,6 +147,15 @@ class SensorGUI :
         # Create a label for errors.
         error_label = tk.Label(self.root, textvariable=self.error)
         error_label.pack(pady=5)
+
+        # Elasped time
+        elapsed_label = tk.Label(self.root, textvariable=self.elapsed)
+        elapsed_label.pack(pady=3)
+
+        # Capture count
+        capture_count_label = tk.Label(self.root, textvariable=self.capture_count)
+        capture_count_label.pack(pady=3)
+
 
 
     def create_new_organism(self) : 
@@ -308,6 +339,13 @@ class SensorGUI :
 
     def update_status_loop(self) : 
 
+        status = self.controller.get_status()
+        elapsed_seconds = status.get("elapsed_seconds", 0.0)
+        capture_count = status.get("capture_count", 0)
+        run_folder = status.get("run_folder", None)
+        last_saved_image = status.get("last_saved_image", None)
+        last_message = status.get("last_message", "Idle")
+
         # Check for errors
         if self.controller.last_error is not None : 
             # Show last error
@@ -327,6 +365,21 @@ class SensorGUI :
 
         # Update button and input states based on whether experiment is running
         self.update_control_states()
+
+        self.elapsed.set(f"Elapsed: {format_elapsed(elapsed_seconds)}")
+        self.capture_count.set(f"Captures: {capture_count}")
+        
+        if run_folder is not None : 
+            self.run_folder.set(f"Run folder: {run_folder}")
+        else : 
+            self.run_folder.set("Run folder: None")
+
+        if last_saved_image is not None : 
+            self.last_saved_image.set(f"Last image: {last_saved_image}")
+        else : 
+            self.last_saved_image.set("Last image: None")
+
+        self.last_message.set(f"Message: {last_message}")
 
         # Schedule to run again after 500ms
         self.root.after(500, self.update_status_loop)
@@ -359,6 +412,7 @@ class SensorGUI :
 
 
         else : 
+            self.stop_requested = False
             self.status.set("Status: Idle")
             self.start_button.config(state=tk.NORMAL) # Dont allow user to press
             self.stop_button.config(state=tk.DISABLED) # Allow user to press
@@ -377,3 +431,5 @@ class SensorGUI :
 
     def run(self) : 
         self.root.mainloop()
+
+    

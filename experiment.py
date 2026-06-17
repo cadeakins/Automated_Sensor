@@ -7,6 +7,7 @@ from measurement_capture import capture_measurement
 from image_processing import make_filename
 from run_metadata import atomic_write_json, write_run_metadata, write_done_file
 
+
 def run_experiment(
         cap,
         laser,
@@ -15,7 +16,8 @@ def run_experiment(
         duration_seconds,
         interval_seconds,
         output_root="current",
-        stop_event=None
+        stop_event=None,
+        status_callback=None
 ):
     """
     Run repeated measurements for specified amount of time
@@ -37,11 +39,26 @@ def run_experiment(
             Main folder where active experiment data is stored
     """
 
+    def send_status(**kwargs) : 
+        """
+        Send live status updates
+        """
+
+        if status_callback is not None : 
+            status_callback(**kwargs)
+
+
     # Create new folder for this experiment
     run_folder = Path(output_root) / microorganism_type / f"run_{run_id}"
     run_folder.mkdir(parents=True, exist_ok=True)
 
     print(f"Experiment data will be saved in: {run_folder}")
+
+    send_status(
+        state="running",
+        run_folder=str(run_folder),
+        last_message=f"Saving data in {run_folder}"
+    )
 
     # Use monotonic time to see time elapsed
     start_time = time.monotonic()
@@ -66,15 +83,19 @@ def run_experiment(
 
             if stop_event is not None and stop_event.is_set() : # User pressed stop button
                 finish_reason = "user_stopped"
+                send_status(state="stopping", last_message="Stop requested.")
                 break
 
             current_time = time.monotonic()
             elapsed_time = current_time - start_time
 
+            send_status(elapsed_seconds=elapsed_time)
+
             # Stop once duration reached
             if elapsed_time >= duration_seconds:
                 print("Experiment duration reached.")
                 finish_reason = "duration_reached"
+                send_status(state="finished", last_message="Experiment duration reached")
                 break
 
             # Capture when next scheduled time has arrived
@@ -105,9 +126,16 @@ def run_experiment(
                     
                     print(f"Saved: {filepath}")
 
+                    send_status(
+                        capture_count=capture_number + 1,
+                        last_saved_image=str(filepath),
+                        last_message=f"Saved {filepath.name}"
+                    )
+
                     capture_number += 1
 
                 except RuntimeError as error:
+                    send_status(last_message=f"Capture failed: {error}")
                     print(f"Capture failed: {error}")
 
                 # Schedule next capture from original timeline
@@ -129,3 +157,4 @@ def run_experiment(
 
     print(f"Experiment finished with {capture_number} saved images.")
     return run_folder
+
