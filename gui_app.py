@@ -7,6 +7,7 @@ from pathlib import Path
 from experiment_controller import ExperimentController
 from startup_recovery import move_valid_runs_to_training, current_folder_has_contents, wipe_folder_contents, move_run_to_training
 from organism_menu import get_organism_options
+from camera_tools import scan_available_cameras
 
 
 def format_elapsed(seconds) : 
@@ -42,7 +43,15 @@ class SensorGUI :
         self.training_folder.mkdir(parents=True, exist_ok=True)
 
         self.organism = tk.StringVar()
-        self.camera_index = tk.StringVar(value="0")
+
+        # Currently selected camera dropdown label
+        self.selected_camera = tk.StringVar()
+        # List of detected cameras
+        self.available_cameras = []
+        # Mapping from dropdown label to camera index 
+        self.camera_label_to_index = {}
+        # Store last camera label list so GUI only updates when cameras change
+
 
         #Both in minutes
         self.duration = tk.StringVar(value="0.5")
@@ -105,11 +114,25 @@ class SensorGUI :
         # Camera
         camera_frame = tk.Frame(self.root)
         camera_frame.pack(pady=5)
-
-        camera_label = tk.Label(camera_frame, text="Camera Index:")
+        camera_label = tk.Label(camera_frame, text="Camera: ")
         camera_label.pack(side=tk.LEFT)
-        self.camera_entry = tk.Entry(camera_frame, textvariable=self.camera_index, width=10)
-        self.camera_entry.pack(side=tk.LEFT)
+
+        self.load_available_cameras()
+        camera_options = list(self.camera_label_to_index.keys())
+        
+        # At least one camera found
+        if camera_options : 
+            # Select first option by default
+            self.selected_camera.set(camera_options[0])
+        else :
+            camera_options = ["No cameras found"]
+            # Default placeholder option
+            self.selected_camera.set(camera_options[0])
+
+        self.camera_menu = tk.OptionMenu(camera_frame, self.selected_camera, *camera_options)
+        self.camera_menu["menu"].config(postcommand=self.refresh_camera_menu_on_open)
+        self.camera_menu.pack(side=tk.LEFT, padx=5)
+
 
         # Duration
         duration_frame = tk.Frame(self.root)
@@ -283,9 +306,73 @@ class SensorGUI :
             self.organism.set(organism_options[0])
 
     
+    def load_available_cameras(self) :
+        """
+        Loads available cameras into memory
+        """
+
+        self.available_cameras = scan_available_cameras()
+
+        # Reset camera label-to-index mapping
+        self.camera_label_to_index = {}
+
+        for camera in self.available_cameras : 
+            self.camera_label_to_index[camera["label"]] = camera["index"]
+
+
+
+    def refresh_camera_menu_on_open(self) :
+        """
+        Refreshes the camera dropdown
+        """
+        # Do not scan while experiment is running
+        if self.controller.is_running :
+            return 
+
+        # Store currently selected camera label
+        previous_selection = self.selected_camera.get()
+
+        # Reload available cameras
+        self.load_available_cameras()
+            
+        camera_options = list(self.camera_label_to_index.keys())
+
+        # Get internal menu from camera dropdown
+        menu = self.camera_menu["menu"]
+
+        # Delete old options
+        menu.delete(0, "end")
+
+        # Check if found
+        if camera_options : 
+            for camera_label in camera_options : 
+                menu.add_command(label=camera_label, command=lambda value=camera_label: self.selected_camera.set(value))
+
+            if previous_selection in camera_options : 
+                # Keep user's previous selection
+                self.selected_camera.set(previous_selection) 
+
+            else : 
+                # Select first available camera
+                self.selected_camera.set(camera_options[0])
+
+        else : # None found
+            menu.add_command(label="No cameras found", command=lambda: self.selected_camera.set("No cameras found"))
+
+            self.selected_camera.set("No cameras found")
+        
+    def get_selected_camera_index(self) : 
+        """
+        Returns the currently selected camera index
+        """
+        selected_label = self.selected_camera.get()
+
+        # Check if label is not a real camera
+        if selected_label not in self.camera_label_to_index : 
+            raise RuntimeError("No valid camera selected.")
+
+        return self.camera_label_to_index[selected_label]
     
-
-
     def start_experiment(self) : 
         """
         Starts experiment
@@ -299,7 +386,7 @@ class SensorGUI :
         
         # Try to parse numeric input fields
         try : 
-            camera_index = int(self.camera_index.get())
+            camera_index = self.get_selected_camera_index()
             duration_minutes = float(self.duration.get())
             interval_minutes = float(self.interval.get())
 
@@ -421,7 +508,7 @@ class SensorGUI :
             self.stop_button.config(state=tk.NORMAL) # Allow user to press
             
             self.organism_menu.config(state=tk.DISABLED)
-            self.camera_entry.config(state=tk.DISABLED)
+            self.camera_menu.config(state=tk.DISABLED)
             self.create_organism_button.config(state=tk.DISABLED)
             self.interval_entry.config(state=tk.DISABLED)
             self.recovery_button.config(state=tk.DISABLED)
@@ -430,8 +517,9 @@ class SensorGUI :
         elif self.controller.is_running and self.stop_requested : 
             self.start_button.config(state=tk.DISABLED) # Dont allow user to press
             self.stop_button.config(state=tk.DISABLED) # Dont user to press
+            
             self.organism_menu.config(state=tk.DISABLED)
-            self.camera_entry.config(state=tk.DISABLED)
+            self.camera_menu.config(state=tk.DISABLED)
             self.create_organism_button.config(state=tk.DISABLED)
             self.interval_entry.config(state=tk.DISABLED)
             self.recovery_button.config(state=tk.DISABLED)
@@ -445,7 +533,7 @@ class SensorGUI :
             self.stop_button.config(state=tk.DISABLED) # Allow user to press
 
             self.organism_menu.config(state=tk.NORMAL)
-            self.camera_entry.config(state=tk.NORMAL)
+            self.camera_menu.config(state=tk.NORMAL)
             self.create_organism_button.config(state=tk.NORMAL)
             self.interval_entry.config(state=tk.NORMAL)
             self.recovery_button.config(state=tk.NORMAL)
