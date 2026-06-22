@@ -11,12 +11,10 @@ DEFAULT_CAMERA_SETTINGS = {
     "normal": {
         "exposure": -6,
         "gain": 0,
-        "wb_temp": 4600
     },
     "low": {
         "exposure": -10,
         "gain": 0,
-        "wb_temp": 4600
     }
 }
 
@@ -112,7 +110,6 @@ def apply_camera_profile(cap, profile_name) :
     # Gain
     cap.set(cv.CAP_PROP_GAIN, profile["gain"])
     # WB
-    cap.set(cv.CAP_PROP_WB_TEMPERATURE, profile["wb_temp"])
 
 
 
@@ -124,5 +121,4 @@ def read_camera_values(cap) :
     return {
         "exposure": cap.get(cv.CAP_PROP_EXPOSURE),
         "gain": cap.get(cv.CAP_PROP_GAIN),
-        "wb_temp": cap.get(cv.CAP_PROP_WB_TEMPERATURE),
     }

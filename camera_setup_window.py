@@ -40,7 +40,6 @@ class CameraSetupWindow :
         self.current_profile = tk.StringVar(value="normal")
         self.exposure_value = tk.DoubleVar(value=0)
         self.gain_value = tk.DoubleVar(value=0)
-        self.wb_value = tk.DoubleVar(value=4600)
         # Sliders are currently being loaded in from file
         self.loading_sliders = False
         self.settings_status = tk.StringVar(value="Settings: Loaded normal profile")
@@ -133,20 +132,6 @@ class CameraSetupWindow :
             length=240
         )
         self.gain_slider.pack(fill=tk.X, pady=3)
-        
-        self.wb_slider = tk.Scale (
-            settings_frame,
-            from_=2800,
-            to=6500,
-            resolution=100,
-            orient=tk.HORIZONTAL,
-            label="White Balance",
-            variable=self.wb_value,
-            command=self.on_slider_change,
-            length=240
-        )
-        self.wb_slider.pack(fill=tk.X, pady=3)
-
         
         settings_status_label = tk.Label(right_frame, textvariable=self.settings_status, wraplength=310, justify=tk.LEFT)
         settings_status_label.pack(fill=tk.X, pady=5)
@@ -314,7 +299,6 @@ class CameraSetupWindow :
 
         self.exposure_value.set(profile["exposure"])
         self.gain_value.set(profile["gain"])
-        self.wb_value.set(profile["wb_temp"])
 
         # Complete
         self.loading_sliders = False
@@ -327,7 +311,6 @@ class CameraSetupWindow :
         return {
             "exposure": self.exposure_value.get(),
             "gain": self.gain_value.get(),
-            "wb_temp": self.wb_value.get(),
         }
     
     def apply_slider_settings_to_camera(self) : 
@@ -344,8 +327,8 @@ class CameraSetupWindow :
         # Apply
         self.cap.set(cv.CAP_PROP_EXPOSURE, profile["exposure"])
         self.cap.set(cv.CAP_PROP_GAIN, profile["gain"])
-        self.cap.set(cv.CAP_PROP_WB_TEMPERATURE, profile["wb_temp"])
     
+
     def on_slider_change(self, value) : 
         """
         Runs whenever a slider changes

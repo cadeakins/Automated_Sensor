@@ -61,4 +61,4 @@ def scan_available_cameras()  :
             }
         )
 
-        return available_cameras
+    return available_cameras

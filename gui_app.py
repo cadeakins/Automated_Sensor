@@ -575,8 +575,7 @@ class SensorGUI :
             self.interval_entry.config(state=tk.NORMAL)
             self.recovery_button.config(state=tk.NORMAL)
             self.duration_entry.config(state=tk.NORMAL)
-            self.camera_setup_button.config(state=tk.NORMAL)
-
+            self.update_recovery_button_state()
 
         if self.camera_setup_open : 
             self.start_button.config(state=tk.DISABLED) # Dont allow user to press
