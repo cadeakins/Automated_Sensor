@@ -36,7 +36,11 @@ class LaserRelay :
         if portname is None : 
             raise RuntimeError("Laser relay device not found")
         
-        self.ser = serial.Serial(portname, self.baudrate, timeout=self.timeout)
+        try :
+            self.ser = serial.Serial(portname, self.baudrate, timeout=self.timeout)
+
+        except Exception as error : 
+            raise RuntimeError(f"Could not open laser relay serial port: {error}")
 
         if not self.ser.is_open : 
             raise RuntimeError("Could not open laser relay serial port")
@@ -50,10 +54,17 @@ class LaserRelay :
         Turn relay on
         """
 
+        # Check if serial connection does not exist or is not open
         if self.ser is None or not self.ser.is_open : 
             raise RuntimeError("Laser relay is not open")
         
-        self.ser.write(b"AT+CH1=1")
+        try : 
+            self.ser.write(b"AT+CH1=1")
+            # Force serial buffer to send immediately
+            self.ser.flush()
+
+        except Exception as error : 
+            raise RuntimeError(f"Laser relay ON command failed: {error}")
 
     def off(self) : 
         """
@@ -63,7 +74,12 @@ class LaserRelay :
         if self.ser is None or not self.ser.is_open : 
             raise RuntimeError("Laser relay is not open")
         
-        self.ser.write(b"AT+CH1=0")
+        try :
+            self.ser.write(b"AT+CH1=0")
+            self.ser.flush() # Immediate serial buffer send
+        
+        except Exception as error :
+            raise RuntimeError(f"Laser relay OFF command failed: {error}") 
 
     def close(self) : 
         """

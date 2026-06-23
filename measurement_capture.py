@@ -95,20 +95,30 @@ def capture_measurement(cap, laser):
     # Use low exposure for both measurement images.
     set_low_exposure(cap)
 
-    # Turn the laser off before capturing the ambient/background image.
-    laser.off()
+    try : 
+        # Turn the laser off before capturing the ambient/background image.
+        laser.off()
+    except Exception as error : 
+        raise RuntimeError(f"RELAY_FAILURE: Could not turn laser off before background capture: {error}")
 
     # Capture the image containing only ambient light and background noise.
     background = grab_frame(cap)
 
-    # Turn the laser on before capturing the measurement image.
+    # Try to capture the laser on image
     try : 
-        laser.on()
+        try : # Try to turn the laser on
+            laser.on()
+        except Exception as error : 
+            raise RuntimeError(f"RELAY_FAILURE: Could not turn laser on for measurement: {error}")
+        
         # Capture the image containing ambient light plus the laser signal.
         laser_image = grab_frame(cap)
     finally : 
-        laser.off()
-    
+        try : # Try to turn laser off
+            laser.off()
+        except Exception as error : 
+            raise RuntimeError(f"RELAY_FAILURE: Could not turn laser off after measurement: {error}")
+        
 
 
     # Verify that both camera captures succeeded.

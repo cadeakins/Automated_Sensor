@@ -147,6 +147,10 @@ def run_experiment(
                     error_text = str(error)
                     print(f"Capture failed: {error}")
 
+                    if "RELAY_FAILURE" in error_text : 
+                        send_status(state="error", last_error=error_text, last_message=f"Fatal relay failure: {error_text}")
+                        raise RuntimeError(error_text)
+
                     consecutive_capture_failures += 1
 
                     if "ARUCO_NOT_FOUND" in error_text : 
@@ -169,7 +173,7 @@ def run_experiment(
                 # Schedule next capture from original timeline
                 next_capture_time += interval_seconds
             
-            #time.sleep(0.1)
+            time.sleep(0.1)
 
     # Fatal capture, saving, camera, or relay failure
     except RuntimeError as error:
