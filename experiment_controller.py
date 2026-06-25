@@ -20,6 +20,14 @@ class ExperimentController :
         self.cap = None # Camera object
         self.laser = None # Laser relay object
 
+        # Lock for safely changing run duration while experiment is running
+        self.duration_lock = threading.Lock()
+        # Currently requested experiment duration in seconds
+        self.requested_duration_seconds = 0
+        # Ending cleanly after event capture
+        self.end_after_current_capture_event = threading.Event()
+
+
         # Lock so experiment thread and GUI thread do not edit status at same time
         self.status_lock = threading.Lock()
         self.status = { # Dictionary for live status updates
@@ -52,6 +60,12 @@ class ExperimentController :
         self.last_error = None
         self.last_run_folder = None
         self.camera_index = camera_index
+
+        # Lock duration state before setting start duration 
+        with self.duration_lock : 
+            self.requested_duration_seconds = duration_seconds
+        self.end_after_current_capture_event.clear()
+
         run_id = int(time.time())
 
         self.update_status(
@@ -216,6 +230,67 @@ class ExperimentController :
 
             # Mark the controller as not running.
             self.is_running = False
+
+    def get_requested_duration_seconds(self) :
+        """ 
+        Safely returns experiment duration
+        """
+
+        # Lock duration while reading
+        with self.duration_lock : 
+            return self.requested_duration_seconds
+        
+    def adjust_time(self, seconds_delta, minimum_extra_seconds=600) :
+        """
+        Changes time to the active experiment duration, and does not let time go below 10 minutes
+        """
+
+        if not self.is_running : 
+            return # Do nothing
+        
+        status = self.get_status()
+        elapsed_seconds = status.get("elapsed_seconds", 0)
+
+        # Calculate minimum allowed duration so subtracting time doesn't just automatically end run
+        minimum_duration = elapsed_seconds + minimum_extra_seconds
+
+        # Lock state while changing
+        with self.duration_lock : 
+            requested_new_duration = self.requested_duration_seconds + seconds_delta
+            self.requested_duration_seconds = max(minimum_duration, requested_new_duration)
+            updated_duration = self.requested_duration_seconds
+
+        # Time added
+        if seconds_delta > 0 :
+            message = f"Added {seconds_delta // 3600}h to experiment"
+        
+        # Time subtracted
+        elif seconds_delta < 0 : 
+            message = f"Subtracted {abs(seconds_delta) // 3600}h from experiment"
+        
+        # Zero adjustment
+        else : 
+            message = "Experiment duration unchanged"
+
+        # Update GUI
+        self.update_status(
+            duration_seconds=updated_duration,
+            last_message=message
+        )
+
+
+        # Lock duration while changing
+        with self.duration_lock : 
+            self.requested_duration_seconds += seconds_delta
+            updated_duration  = self.requested_duration_seconds
+
+        # Update GUI status with new duration
+        self.update_status(
+            duration_seconds=updated_duration,
+            last_message=f"Added {seconds_delta // 3600}h to the experiment"
+        )
+
+
 
     def stop_experiment(self) : 
         """

@@ -4,16 +4,16 @@ import numpy as np
 ARUCO_DICTIONARY = cv.aruco.DICT_4X4_50
 REQUIRED_MARKER_IDS = {0, 1, 2, 3}
 
-# Marker layout expected by this program:
-#
-#       ID 0 ---------------- ID 1
-#        |                      |
-#        |         ROI          |
-#        |                      |
-#       ID 3 ---------------- ID 2
-#
-# The program uses the inside corner of each marker to define the ROI.
+""" Marker layout expected by this program:
 
+        ID 0 ---------------- ID 1
+        |                      |
+        |         ROI          |
+        |                      |
+        ID 3 ---------------- ID 2
+
+ The program uses the inside corner of each marker to define the ROI.
+"""
 
 
 def detect_aruco_markers(image):

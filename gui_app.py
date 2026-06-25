@@ -228,7 +228,7 @@ class SensorGUI :
         # Preset
         preset_frame = tk.Frame(timing_frame)
         preset_frame.pack(fill=tk.X, pady=(8,3))
-        preset_label = tk.Label(preset_frame, text="Duration: ", width=14, anchor="w")
+        preset_label = tk.Label(preset_frame, text="Time Presets: ", width=10, anchor="w")
         preset_label.pack(side=tk.LEFT)
 
         self.preset_6h_button = tk.Button(preset_frame, text="6h", command=lambda: self.set_duration_preset(hours=6))
@@ -244,7 +244,19 @@ class SensorGUI :
         self.preset_48h_button.pack(side=tk.LEFT, padx=2)
 
         self.preset_72h_button = tk.Button(preset_frame, text="72h", command=lambda: self.set_duration_preset(days=3))
-        self.preset_72h_button.pack(side=tk.LEFT, padx=2)
+        self.preset_72h_button.pack(side=tk.LEFT, padx=8)
+
+        # Time adjustment
+        adjustment_label = tk.Label(preset_frame, text="Adjust Live Timing: ", width=14, anchor="w")
+        adjustment_label.pack(side=tk.LEFT)
+
+        add_1h_button = tk.Button(preset_frame, text="+1h", command=lambda: self.controller.adjust_time(3600)) # Add one hour
+        add_1h_button.pack(side=tk.LEFT, padx=2)
+        add_6h_button = tk.Button(preset_frame, text="+6h", command=lambda: self.controller.adjust_time(21600)) # Add 6 hours
+        add_6h_button.pack(side=tk.LEFT, padx=2)
+        sub_1h_button = tk.Button(preset_frame, text="-1h", command=lambda: self.controller.adjust_time(-3600)) # Subtract 1 hour
+        sub_1h_button.pack(side=tk.LEFT, padx=2)
+
 
         # Estimation
         estimate_frame = tk.Frame(timing_frame)
