@@ -12,7 +12,7 @@ from tkinter import ttk
 from pathlib import Path
 
 from experiment_controller import ExperimentController
-from gui_theme import *
+from gui_theme import (NAVY, TECHMI_BLUE, enable_windows_dpi_awareness)
 from gui_layout import LayoutMixin
 from gui_setup_panel import SetupPanelMixin
 from gui_timing_panel import TimingPanelMixin
@@ -41,7 +41,7 @@ class SensorGUI(
     def __init__(self, current_folder, training_folder):
             enable_windows_dpi_awareness()
             self.root = tk.Tk()
-            self.root.title("TECHMI – Bioreactor Sensor Control Panel")
+            self.root.title("TECHMI Bioreactor Sensor Control Panel")
             self.root.geometry("1920x1080")
             self.root.minsize(1100, 700)
             self.root.configure(bg=NAVY)
