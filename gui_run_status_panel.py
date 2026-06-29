@@ -25,6 +25,7 @@ from gui_theme import (
     CARD_BG,
     DANGER,
     FONT_BRAND,
+    CARD_BORDER,
     FONT_MONO,
     SUCCESS,
     TECHMI_BLUE,
@@ -57,34 +58,57 @@ class RunStatusLogMixin:
 
         # Start / Stop buttons side by side
         self.start_button = _btn(c, "▶  Start Experiment",
-                                 self.start_experiment, "primary", h=40)
+                                 self.start_experiment, "primary")
         self.start_button.grid(row=0, column=0, sticky="ew",
-                               padx=(0, 6), pady=(0, 10))
+                               padx=(0, 6), pady=(2, 5))
 
         self.stop_button = _btn(c, "■  Stop Experiment",
-                                self.stop_experiment, "danger", h=40)
+                                self.stop_experiment, "danger")
         self.stop_button.grid(row=0, column=1, sticky="ew",
-                              padx=(6, 0), pady=(0, 10))
+                              padx=(6, 0), pady=(0, 5))
 
         # Live adjustment section label
         _section_label(c, "Live Run Adjustments").grid(
-            row=1, column=0, columnspan=2, sticky="w", pady=(0, 4))
+            row=1, column=0, columnspan=2, sticky="w", pady=(0, 2))
 
         # Adjustment buttons: +1h, +6h, −1h
         adj_frame = tk.Frame(c, bg=CARD_BG)
-        adj_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
+        adj_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0,2))
         adj_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
         for i, (label, delta) in enumerate([
             ("+1h",  3600),
             ("+6h", 21600),
-            ("−1h", -3600),
+            ("-1h", -3600),
         ]):
-            b = _btn(adj_frame, label,
-                     lambda d=delta: self.controller.adjust_time(d),
-                     "secondary")
-            b.grid(row=0, column=i, sticky="ew", padx=3)
-            # Track for enable/disable during experiments
+            btn_border = tk.Frame(adj_frame, bg=CARD_BORDER, padx=1, pady=1)
+            
+            btn_border.grid(
+                row=0,
+                column=i,
+                sticky="ew",
+                padx=2,
+                pady=1
+            )
+
+            b = tk.Button(
+                btn_border,
+                text=label,
+                relief="flat",
+                bd=0,
+                cursor="hand2",
+                bg=CARD_BG,
+                fg=TEXT_MUTED,
+                activebackground=TECHMI_BLUE,
+                activeforeground="white",
+                font=(FONT_BRAND, 9),
+                padx=6,
+                pady=2,
+                command=lambda d=delta: self.controller.adjust_time(d)
+            )
+
+            b.pack(fill=tk.BOTH, expand=True)
+
             self._run_adjust_btns.append(b)
 
     # ── Live Status panel ─────────────────────────────────────────────────────
@@ -104,66 +128,73 @@ class RunStatusLogMixin:
 
         # ── Donut canvas (left side of card) ──────────────────────────────────
         self._donut_canvas = tk.Canvas(c,
-                                       width=110,
-                                       height=110,
+                                       width=90,
+                                       height=90,
                                        bg=CARD_BG,
                                        highlightthickness=0)
         self._donut_canvas.grid(row=0, column=0,
                                 rowspan=3,
-                                padx=(0, 16),
-                                pady=4,
-                                sticky="n")
+                                padx=(0, 14),
+                                pady=(0,0),
+                                sticky="nw")
         # Draw initial empty ring
         self._draw_donut(0)
 
         # ── Metric labels grid (right side) ───────────────────────────────────
         metrics = tk.Frame(c, bg=CARD_BG)
-        metrics.grid(row=0, column=1, sticky="nsew")
+        metrics.grid(row=0, column=1, sticky="ew", padx=(5,0))
         metrics.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
-        # Four columns: Status | Elapsed | Remaining | Est. Finish
-        for col, (label_text, string_var) in enumerate([
-            ("Status",      self.status),
-            ("Elapsed",     self.elapsed),
-            ("Remaining",   self.remaining),
-            ("Est. Finish", self.estimated_finish_text),
-        ]):
-            # Small muted header
-            tk.Label(metrics,
-                     text=label_text,
-                     fg=TEXT_MUTED,
-                     bg=CARD_BG,
-                     font=(FONT_BRAND, 9, "bold")).grid(
-                row=0, column=col, sticky="w", padx=6, pady=(0, 2))
+        metric_items = [
+            ("Status", self.status, SUCCESS),
+            ("Elapsed", self.elapsed, TEXT_DARK),
+            ("Remaining", self.remaining, TEXT_DARK),
+            ("Est. Finish", self.estimated_finish_text, TEXT_DARK),
+        ]
 
-            # Value label — Status uses green, others use dark text
-            value_fg = SUCCESS if label_text == "Status" else TEXT_DARK
-            tk.Label(metrics,
-                     textvariable=string_var,
-                     fg=value_fg,
-                     bg=CARD_BG,
-                     font=(FONT_BRAND, 11, "bold")).grid(
-                row=1, column=col, sticky="w", padx=6)
+        for col, (label_text, string_var, value_color) in enumerate(metric_items):
+            # Small muted metric title.
+            tk.Label(
+                metrics,
+                text=label_text,
+                fg=TEXT_MUTED,
+                bg=CARD_BG,
+                font=(FONT_BRAND, 8, "bold"),
+                anchor="w"
+            ).grid(row=0, column=col, sticky="w", padx=(0, 8))
 
-        # ── Captures row + linear progress bar ───────────────────────────────
-        prog_frame = tk.Frame(c, bg=CARD_BG)
-        prog_frame.grid(row=1, column=1, sticky="ew", pady=(10, 0))
-        prog_frame.grid_columnconfigure(1, weight=1)
+            # Main metric value.
+            tk.Label(
+                metrics,
+                textvariable=string_var,
+                fg=value_color,
+                bg=CARD_BG,
+                font=(FONT_BRAND, 10, "bold"),
+                anchor="w"
+            ).grid(row=1, column=col, sticky="w", padx=(0, 8), pady=(1, 0))
 
-        tk.Label(prog_frame,
-                 text="Captures",
-                 fg=TEXT_MUTED,
-                 bg=CARD_BG,
-                 font=(FONT_BRAND, 9, "bold")).grid(row=0, column=0,
-                                                    sticky="w", padx=(0, 8))
-        tk.Label(prog_frame,
-                 textvariable=self.capture_count,
-                 fg=TEXT_DARK,
-                 bg=CARD_BG,
-                 font=(FONT_BRAND, 11, "bold")).grid(row=0, column=1,
-                                                     sticky="w")
+        # ── Capture count row ──────────────────────────────────────────────────
+        capture_row = tk.Frame(c, bg=CARD_BG)
+        capture_row.grid(row=1, column=1, sticky="ew", pady=(8, 2))
+        capture_row.grid_columnconfigure(1, weight=1)
 
-        # Progress bar (styled via ttk in __init__)
+        tk.Label(
+            capture_row,
+            text="Captures",
+            fg=TEXT_MUTED,
+            bg=CARD_BG,
+            font=(FONT_BRAND, 8, "bold")
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+
+        tk.Label(
+            capture_row,
+            textvariable=self.capture_count,
+            fg=TEXT_DARK,
+            bg=CARD_BG,
+            font=(FONT_BRAND, 10, "bold")
+        ).grid(row=0, column=1, sticky="w")
+
+        # Progress bar for run completion.
         self.progress_bar = ttk.Progressbar(
             c,
             orient=tk.HORIZONTAL,
@@ -172,27 +203,40 @@ class RunStatusLogMixin:
             variable=self.progress_pct,
         )
         self.progress_bar["maximum"] = 100
-        self.progress_bar.grid(row=2, column=1, sticky="ew", pady=(6, 0))
+        self.progress_bar.grid(row=2, column=1, sticky="ew", pady=(2, 0))
 
-        # ── Last message ──────────────────────────────────────────────────────
-        tk.Label(c,
-                 textvariable=self.last_msg_var,
-                 fg=TEXT_MUTED,
-                 bg=CARD_BG,
-                 font=(FONT_BRAND, 10),
-                 anchor="w",
-                 wraplength=500).grid(
-            row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        # ── Bottom message row ─────────────────────────────────────────────────
+        bottom_msg = tk.Frame(c, bg=CARD_BG)
+        bottom_msg.grid(
+            row=3,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(6, 0)
+        )
+        bottom_msg.grid_columnconfigure(0, weight=1)
 
-        # ── Error line ────────────────────────────────────────────────────────
-        tk.Label(c,
-                 textvariable=self.error_var,
-                 fg=DANGER,
-                 bg=CARD_BG,
-                 font=(FONT_BRAND, 10),
-                 anchor="w").grid(
-            row=4, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+        # Last controller message.
+        tk.Label(
+            bottom_msg,
+            textvariable=self.last_msg_var,
+            fg=TEXT_MUTED,
+            bg=CARD_BG,
+            font=(FONT_BRAND, 8),
+            anchor="w",
+            wraplength=700
+        ).grid(row=0, column=0, sticky="ew")
 
+        # Error message, normally just "—".
+        tk.Label(
+            bottom_msg,
+            textvariable=self.error_var,
+            fg=DANGER,
+            bg=CARD_BG,
+            font=(FONT_BRAND, 8),
+            anchor="w",
+            wraplength=700
+        ).grid(row=1, column=0, sticky="ew", pady=(1, 0))
     # ── Donut renderer ────────────────────────────────────────────────────────
     def _draw_donut(self, pct: float):
         """
@@ -203,36 +247,36 @@ class RunStatusLogMixin:
         cv = self._donut_canvas
         cv.delete("all")
 
-        cx, cy = 55, 55
-        r = 46   # outer radius of the arc
+        cx, cy = 45, 45
+        r = 34   # outer radius of the arc
+        arc_width = 10
 
         # Background ring (full circle in light grey)
         cv.create_arc(cx - r, cy - r, cx + r, cy + r,
                       start=90, extent=360,
                       outline="#e8edf5",
-                      width=14,
+                      width=arc_width,
                       style="arc")
 
         # Progress arc (clockwise from top, TECHMI blue)
-        extent = -pct * 3.6
+        if pct >= 0.25 :
+                extent = -pct * 3.6
+        else :
+            extent = 0
+
         if extent != 0:
             cv.create_arc(cx - r, cy - r, cx + r, cy + r,
-                          start=90, extent=extent,
-                          outline=TECHMI_BLUE,
-                          width=14,
-                          style="arc")
+                        start=90, extent=extent,
+                        outline=TECHMI_BLUE,
+                        width=arc_width,
+                        style="arc")
 
         # Percentage text in the centre
-        cv.create_text(cx, cy - 6,
-                       text=f"{int(pct)}%",
-                       fill=TEXT_DARK,
-                       font=(FONT_BRAND, 14, "bold"))
+        cv.create_text(cx, cy - 7,
+                    text=f"{int(pct)}%",
+                    fill=TEXT_DARK,
+                    font=(FONT_BRAND, 11, "bold"))
 
-        # Small label below the number
-        cv.create_text(cx, cy + 14,
-                       text="COMPLETE",
-                       fill=TEXT_MUTED,
-                       font=(FONT_BRAND, 7))
 
     # ── Log / Messages panel ──────────────────────────────────────────────────
     def _build_log_panel(self, parent, row=0):

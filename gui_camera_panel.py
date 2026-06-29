@@ -343,102 +343,203 @@ class CameraPanelMixin:
                 messagebox.showerror("Laser Error", str(e))
 
     def _build_camera_settings_panel(self, parent, row=0):
-            card, c = _card(parent, "CAMERA SETTINGS", "☷")
-            parent.grid_rowconfigure(row, weight=1)
-            parent.grid_columnconfigure(0, weight=1)
-            card.grid(row=row, column=0, sticky="nsew", pady=(0, 6))
-            c.grid_columnconfigure(0, weight=1)
-            c.grid_columnconfigure(1, weight=0)
+        """
+        Builds the compact camera settings card.
 
-            # Warning
-            tk.Label(
-                c,
-                text="⚠  Disable camera auto settings manually before running",
-                fg=WARNING, bg=CARD_BG,
-                font=(FONT_BRAND, 8, "bold"),
-                wraplength=500, anchor="w", justify="left"
-            ).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        The old version stacked everything vertically, which made the right
+        column too tall. This version uses a compact grid so exposure profile,
+        sliders, and save/reset controls fit in the same card.
+        """
 
-            # Exposure profile buttons
-            _section_label(c, "Exposure Profile").grid(
-                row=1, column=0, sticky="w", pady=(0, 4))
+        # Let the card fill the slot frame given by gui_layout.py.
+        parent.grid_rowconfigure(row, weight=1)
+        parent.grid_columnconfigure(0, weight=1)
 
-            pf = tk.Frame(c, bg=CARD_BG)
-            pf.grid(row=2, column=0, sticky="w", pady=(0, 12))
+        # Create the card.
+        card, c = _card(parent, "CAMERA SETTINGS", "☷")
+        card.grid(row=row, column=0, sticky="nsew")
 
-            self._norm_btn = tk.Button(
-                pf, text="Normal", relief="flat", bd=0,
-                bg=TECHMI_BLUE, fg="white",
-                activebackground=TECHMI_BLUE, activeforeground="white",
-                font=(FONT_BRAND, 9, "bold"),
-                padx=14, pady=5, cursor="hand2",
-                command=lambda: self._switch_cam_profile("normal")
-            )
-            self._norm_btn.pack(side=tk.LEFT, padx=(0, 4))
+        # Three internal columns:
+        # column 0 = profile buttons
+        # column 1 = sliders
+        # column 2 = save/reset buttons
+        c.grid_columnconfigure(0, weight=0)
+        c.grid_columnconfigure(1, weight=1)
+        c.grid_columnconfigure(2, weight=0)
 
-            self._low_btn = tk.Button(
-                pf, text="Low", relief="flat", bd=0,
-                bg=CARD_BG, fg=TEXT_MUTED,
-                activebackground=TECHMI_BLUE, activeforeground="white",
-                font=(FONT_BRAND, 9),
-                padx=14, pady=5, cursor="hand2",
-                highlightthickness=1, highlightbackground=CARD_BORDER,
-                command=lambda: self._switch_cam_profile("low")
-            )
-            self._low_btn.pack(side=tk.LEFT)
+        # Warning message across the full card.
+        tk.Label(
+            c,
+            text="⚠  Disable camera auto settings manually before running",
+            fg=WARNING,
+            bg=CARD_BG,
+            font=(FONT_BRAND, 8, "bold"),
+            anchor="w",
+            justify="left"
+        ).grid(
+            row=0,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            pady=(0, 6)
+        )
 
-            # Exposure slider
-            _section_label(c, "Exposure").grid(
-                row=3, column=0, sticky="w", pady=(0, 2))
+        # ── Exposure profile column ────────────────────────────────────────
+        _section_label(c, "Exposure Profile").grid(
+            row=1,
+            column=0,
+            sticky="w",
+            pady=(0, 3)
+        )
 
-            self._exposure_slider = tk.Scale(
-                c, from_=-13, to=0, resolution=1,
-                orient=tk.HORIZONTAL,
-                variable=self.exposure_var,
-                command=self._on_cam_slider_change,
-                bg=CARD_BG, fg=TEXT_DARK,
-                troughcolor="#e8edf5",
-                activebackground=TECHMI_BLUE,
-                highlightthickness=0,
-                sliderrelief="flat",
-                length=300, showvalue=True
-            )
-            self._exposure_slider.grid(row=4, column=0, sticky="ew",
-                                       pady=(0, 8))
+        profile_frame = tk.Frame(c, bg=CARD_BG)
+        profile_frame.grid(
+            row=2,
+            column=0,
+            rowspan=3,
+            sticky="nw",
+            padx=(0, 16)
+        )
 
-            # Gain slider
-            _section_label(c, "Gain").grid(
-                row=5, column=0, sticky="w", pady=(0, 2))
+        self._norm_btn = tk.Button(
+            profile_frame,
+            text="Normal",
+            relief="flat",
+            bd=0,
+            bg=TECHMI_BLUE,
+            fg="white",
+            activebackground=TECHMI_BLUE,
+            activeforeground="white",
+            font=(FONT_BRAND, 9, "bold"),
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            command=lambda: self._switch_cam_profile("normal")
+        )
+        self._norm_btn.pack(side=tk.TOP, fill=tk.X, pady=(0, 4))
 
-            self._gain_slider = tk.Scale(
-                c, from_=0, to=255, resolution=1,
-                orient=tk.HORIZONTAL,
-                variable=self.gain_var,
-                command=self._on_cam_slider_change,
-                bg=CARD_BG, fg=TEXT_DARK,
-                troughcolor="#e8edf5",
-                activebackground=TECHMI_BLUE,
-                highlightthickness=0,
-                sliderrelief="flat",
-                length=300, showvalue=True
-            )
-            self._gain_slider.grid(row=6, column=0, sticky="ew", pady=(0, 10))
+        self._low_btn = tk.Button(
+            profile_frame,
+            text="Low",
+            relief="flat",
+            bd=0,
+            bg=CARD_BG,
+            fg=TEXT_MUTED,
+            activebackground=TECHMI_BLUE,
+            activeforeground="white",
+            font=(FONT_BRAND, 9),
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            highlightthickness=1,
+            highlightbackground=CARD_BORDER,
+            command=lambda: self._switch_cam_profile("low")
+        )
+        self._low_btn.pack(side=tk.TOP, fill=tk.X)
 
-            # Save / Reset buttons
-            btn_row = tk.Frame(c, bg=CARD_BG)
-            btn_row.grid(row=7, column=0, columnspan=2, sticky="ew")
+        # ── Slider column ──────────────────────────────────────────────────
+        _section_label(c, "Exposure").grid(
+            row=1,
+            column=1,
+            sticky="w",
+            pady=(0, 2)
+        )
 
-            _btn(btn_row, "💾  Save Profile",
-                 self._save_cam_profile, "primary").pack(
-                side=tk.LEFT, padx=(0, 6))
-            _btn(btn_row, "↺  Reset to Default",
-                 self._reset_cam_profile, "secondary").pack(side=tk.LEFT)
+        self._exposure_slider = tk.Scale(
+            c,
+            from_=-13,
+            to=0,
+            resolution=1,
+            orient=tk.HORIZONTAL,
+            variable=self.exposure_var,
+            command=self._on_cam_slider_change,
+            bg=CARD_BG,
+            fg=TEXT_DARK,
+            troughcolor="#e8edf5",
+            activebackground=TECHMI_BLUE,
+            highlightthickness=0,
+            sliderrelief="flat",
+            length=260,
+            showvalue=True
+        )
+        self._exposure_slider.grid(
+            row=2,
+            column=1,
+            sticky="ew",
+            pady=(0, 4)
+        )
 
-            self._cam_status_var = tk.StringVar(value="")
-            tk.Label(c, textvariable=self._cam_status_var,
-                     fg=SUCCESS, bg=CARD_BG,
-                     font=(FONT_BRAND, 8)).grid(
-                row=8, column=0, sticky="w", pady=(4, 0))
+        _section_label(c, "Gain").grid(
+            row=3,
+            column=1,
+            sticky="w",
+            pady=(0, 2)
+        )
+
+        self._gain_slider = tk.Scale(
+            c,
+            from_=0,
+            to=255,
+            resolution=1,
+            orient=tk.HORIZONTAL,
+            variable=self.gain_var,
+            command=self._on_cam_slider_change,
+            bg=CARD_BG,
+            fg=TEXT_DARK,
+            troughcolor="#e8edf5",
+            activebackground=TECHMI_BLUE,
+            highlightthickness=0,
+            sliderrelief="flat",
+            length=260,
+            showvalue=True
+        )
+        self._gain_slider.grid(
+            row=4,
+            column=1,
+            sticky="ew",
+            pady=(0, 0)
+        )
+
+        # ── Save/reset column ──────────────────────────────────────────────
+        button_frame = tk.Frame(c, bg=CARD_BG)
+        button_frame.grid(
+            row=2,
+            column=2,
+            rowspan=3,
+            sticky="ne",
+            padx=(16, 0)
+        )
+
+        _btn(
+            button_frame,
+            "💾  Save",
+            self._save_cam_profile,
+            "primary"
+        ).pack(fill=tk.X, pady=(0, 6))
+
+        _btn(
+            button_frame,
+            "↺  Reset",
+            self._reset_cam_profile,
+            "secondary"
+        ).pack(fill=tk.X)
+
+        # Small status label under the card controls.
+        self._cam_status_var = tk.StringVar(value="")
+        tk.Label(
+            c,
+            textvariable=self._cam_status_var,
+            fg=SUCCESS,
+            bg=CARD_BG,
+            font=(FONT_BRAND, 8),
+            anchor="w"
+        ).grid(
+            row=5,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            pady=(4, 0)
+        )
 
     def _switch_cam_profile(self, name: str):
             self.cam_profile.set(name)

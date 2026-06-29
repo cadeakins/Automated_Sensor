@@ -35,8 +35,9 @@ from gui_theme import (
 # ── Fixed layout constants ────────────────────────────────────────────────────
 SIDEBAR_WIDTH  = 190
 TOPBAR_HEIGHT  = 60
-COL_PAD        = 6   # gap between the two dashboard columns
-OUTER_PAD      = 12  # padding around the whole dashboard area
+COL_PAD        = 5   # gap between the two dashboard columns
+ROW_PAD        = 2   # gap between row columns
+OUTER_PAD      = 10  # padding around the whole dashboard area
 
 
 class LayoutMixin:
@@ -264,11 +265,12 @@ class LayoutMixin:
             column=0,
             columnspan=2,
             sticky="nsew",
-            padx=(0, COL_PAD)
+            padx=(0, COL_PAD),
+            pady=(0, ROW_PAD)
         )
 
         left_region.grid_columnconfigure(0, weight=1)
-        left_region.grid_rowconfigure(0, weight=2)  # setup + timing
+        left_region.grid_rowconfigure(0, weight=4, minsize=330)  # setup + timing
         left_region.grid_rowconfigure(1, weight=1)  # run control
         left_region.grid_rowconfigure(2, weight=2)  # live status
         left_region.grid_rowconfigure(3, weight=1)  # log
@@ -279,7 +281,8 @@ class LayoutMixin:
             row=0,
             column=0,
             sticky="nsew",
-            pady=(0, COL_PAD)
+            padx=(0, COL_PAD),
+            pady=(0, ROW_PAD)
         )
 
         top_left_region.grid_columnconfigure(0, weight=1, uniform="left_top")
@@ -291,7 +294,8 @@ class LayoutMixin:
             row=0,
             column=0,
             sticky="nsew",
-            padx=(0, COL_PAD)
+            padx=(0, COL_PAD),
+            pady=(0, ROW_PAD)
         )
         setup_slot.grid_columnconfigure(0, weight=1)
         setup_slot.grid_rowconfigure(0, weight=1)
@@ -301,7 +305,8 @@ class LayoutMixin:
             row=0,
             column=1,
             sticky="nsew",
-            padx=(COL_PAD, 0)
+            padx=(COL_PAD, 0),
+            pady=(0, ROW_PAD)
         )
         timing_slot.grid_columnconfigure(0, weight=1)
         timing_slot.grid_rowconfigure(0, weight=1)
@@ -312,7 +317,7 @@ class LayoutMixin:
             row=1,
             column=0,
             sticky="nsew",
-            pady=(COL_PAD, COL_PAD)
+            pady=(ROW_PAD, ROW_PAD)
         )
         run_slot.grid_columnconfigure(0, weight=1)
         run_slot.grid_rowconfigure(0, weight=1)
@@ -323,7 +328,7 @@ class LayoutMixin:
             row=2,
             column=0,
             sticky="nsew",
-            pady=(COL_PAD, COL_PAD)
+            pady=(ROW_PAD, ROW_PAD)
         )
         status_slot.grid_columnconfigure(0, weight=1)
         status_slot.grid_rowconfigure(0, weight=1)
@@ -334,7 +339,7 @@ class LayoutMixin:
             row=3,
             column=0,
             sticky="nsew",
-            pady=(COL_PAD, 0)
+            pady=(ROW_PAD, 0)
         )
         log_slot.grid_columnconfigure(0, weight=1)
         log_slot.grid_rowconfigure(0, weight=1)
@@ -361,7 +366,7 @@ class LayoutMixin:
             row=0,
             column=0,
             sticky="nsew",
-            pady=(0, COL_PAD)
+            pady=(0, ROW_PAD)
         )
         preview_slot.grid_columnconfigure(0, weight=1)
         preview_slot.grid_rowconfigure(0, weight=1)
@@ -371,7 +376,7 @@ class LayoutMixin:
             row=1,
             column=0,
             sticky="nsew",
-            pady=(COL_PAD, COL_PAD)
+            pady=(ROW_PAD, ROW_PAD)
         )
         camera_settings_slot.grid_columnconfigure(0, weight=1)
         camera_settings_slot.grid_rowconfigure(0, weight=1)
@@ -381,7 +386,7 @@ class LayoutMixin:
             row=2,
             column=0,
             sticky="nsew",
-            pady=(COL_PAD, 0)
+            pady=(ROW_PAD, 0)
         )
         recovery_slot.grid_columnconfigure(0, weight=1)
         recovery_slot.grid_rowconfigure(0, weight=1)

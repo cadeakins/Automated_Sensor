@@ -34,7 +34,7 @@ class TimingPanelMixin:
 
             # Duration
             _section_label(c, "Total Duration").grid(
-                row=0, column=0, columnspan=3, sticky="w", pady=(0, 4))
+                row=0, column=0, columnspan=3, sticky="w", pady=(0, 2))
 
             self.dur_days_e = _entry(c, self.duration_days)
             self.dur_days_e.grid(row=1, column=0, sticky="ew", padx=(0, 4))
@@ -45,15 +45,15 @@ class TimingPanelMixin:
 
             for lbl, col in [("Days", 0), ("Hours", 1), ("Minutes", 2)]:
                 tk.Label(c, text=lbl, fg=TEXT_MUTED, bg=CARD_BG,
-                         font=(FONT_BRAND, 9)).grid(
-                    row=2, column=col, pady=(1, 5))
+                         font=(FONT_BRAND, 7)).grid(
+                    row=2, column=col, pady=(0, 2))
 
             self._idle_only_widgets += [self.dur_days_e, self.dur_hrs_e,
                                         self.dur_min_e]
 
             # Interval
             _section_label(c, "Capture Interval").grid(
-                row=3, column=0, columnspan=3, sticky="w", pady=(0, 4))
+                row=3, column=0, columnspan=3, sticky="w", pady=(0, 2))
 
             self.int_hrs_e = _entry(c, self.interval_hours)
             self.int_hrs_e.grid(row=4, column=0, sticky="ew", padx=(0, 4))
@@ -62,16 +62,16 @@ class TimingPanelMixin:
 
             for lbl, col in [("Hours", 0), ("Minutes", 1)]:
                 tk.Label(c, text=lbl, fg=TEXT_MUTED, bg=CARD_BG,
-                         font=(FONT_BRAND, 9)).grid(
-                    row=5, column=col, pady=(1, 5))
+                         font=(FONT_BRAND, 7)).grid(
+                    row=5, column=col, pady=(0, 2))
 
             self._idle_only_widgets += [self.int_hrs_e, self.int_min_e]
 
             # Quick presets
             _section_label(c, "Quick Presets").grid(
-                row=6, column=0, columnspan=3, sticky="w", pady=(0, 2))
+                row=6, column=0, columnspan=3, sticky="w", pady=(0, 0))
 
-            pf = tk.Frame(c, bg=CARD_BG)
+            pf = tk.Frame(c, bg=CARD_BG,)
             pf.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(0, 2))
             pf.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
 
@@ -82,15 +82,43 @@ class TimingPanelMixin:
                        ("48h", dict(days=2)),
                        ("72h", dict(days=3))]
             for i, (label, kwargs) in enumerate(presets):
+                # Border frame creates the gray outline around each preset button.
+                btn_border = tk.Frame(
+                    pf,
+                    bg=CARD_BORDER,
+                    padx=1,
+                    pady=1
+                )
+
+                # Place each bordered button frame in the preset row.
+                btn_border.grid(
+                    row=0,
+                    column=i,
+                    sticky="ew",
+                    padx=2,
+                    pady=1
+                )
+
+                # Actual preset button sits inside the border frame.
                 b = tk.Button(
-                    pf, text=label, relief="flat", bd=0, cursor="hand2",
-                    bg=CARD_BG, fg=TEXT_MUTED,
-                    activebackground=TECHMI_BLUE, activeforeground="white",
+                    btn_border,
+                    text=label,
+                    relief="flat",
+                    bd=0,
+                    cursor="hand2",
+                    bg=CARD_BG,
+                    fg=TEXT_MUTED,
+                    activebackground=TECHMI_BLUE,
+                    activeforeground="white",
                     font=(FONT_BRAND, 9),
-                    padx=6, pady=2,
+                    padx=6,
+                    pady=2,
                     command=lambda kw=kwargs: self.set_duration_preset(**kw)
                 )
-                b.grid(row=0, column=i, sticky="ew", padx=2)
+
+                # Fill the border frame so the gray outline is visible around the button.
+                b.pack(fill=tk.BOTH, expand=True)
+
                 self._preset_btns.append(b)
                 self._idle_only_widgets.append(b)
 
