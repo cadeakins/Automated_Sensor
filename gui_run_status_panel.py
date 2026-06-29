@@ -143,7 +143,17 @@ class RunStatusLogMixin:
         # ── Metric labels grid (right side) ───────────────────────────────────
         metrics = tk.Frame(c, bg=CARD_BG)
         metrics.grid(row=0, column=1, sticky="ew", padx=(5,0))
-        metrics.grid_columnconfigure((0, 1, 2, 3), weight=1)
+
+        # Metric columns expand.
+        metrics.grid_columnconfigure(0, weight=1)
+        metrics.grid_columnconfigure(2, weight=1)
+        metrics.grid_columnconfigure(4, weight=1)
+        metrics.grid_columnconfigure(6, weight=1)
+
+        # Divider columns stay thin.
+        metrics.grid_columnconfigure(1, weight=0)
+        metrics.grid_columnconfigure(3, weight=0)
+        metrics.grid_columnconfigure(5, weight=0)
 
         metric_items = [
             ("Status", self.status, SUCCESS),
@@ -152,7 +162,12 @@ class RunStatusLogMixin:
             ("Est. Finish", self.estimated_finish_text, TEXT_DARK),
         ]
 
-        for col, (label_text, string_var, value_color) in enumerate(metric_items):
+        # Where text goes
+        metric_cols = [0,2,4,6]
+
+        for i, (label_text, string_var, value_color) in enumerate(metric_items):
+            col = metric_cols[i]
+
             # Small muted metric title.
             tk.Label(
                 metrics,
@@ -161,7 +176,12 @@ class RunStatusLogMixin:
                 bg=CARD_BG,
                 font=(FONT_BRAND, 8, "bold"),
                 anchor="w"
-            ).grid(row=0, column=col, sticky="w", padx=(0, 8))
+            ).grid(
+                row=0,
+                column=col,
+                sticky="w",
+                padx=(0, 8)
+            )
 
             # Main metric value.
             tk.Label(
@@ -171,8 +191,28 @@ class RunStatusLogMixin:
                 bg=CARD_BG,
                 font=(FONT_BRAND, 10, "bold"),
                 anchor="w"
-            ).grid(row=1, column=col, sticky="w", padx=(0, 8), pady=(1, 0))
+            ).grid(
+                row=1,
+                column=col,
+                sticky="w",
+                padx=(0, 8),
+                pady=(1, 0)
+            )
 
+        # Thin vertical divider lines between metric groups.
+        for divider_col in [1, 3, 5]:
+            tk.Frame(
+                metrics,
+                bg=CARD_BORDER,
+                width=1
+            ).grid(
+                row=0,
+                column=divider_col,
+                rowspan=2,
+                sticky="ns",
+                padx=(8, 12),
+                pady=(0, 0)
+            )
         # ── Capture count row ──────────────────────────────────────────────────
         capture_row = tk.Frame(c, bg=CARD_BG)
         capture_row.grid(row=1, column=1, sticky="ew", pady=(8, 2))

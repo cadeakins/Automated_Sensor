@@ -29,8 +29,295 @@ from camera_settings import (
     save_camera_settings
 )
 
-PREVIEW_WIDTH = 460
-PREVIEW_HEIGHT = 259
+PREVIEW_WIDTH = 600
+PREVIEW_HEIGHT = 300
+
+class HoverTip:
+    """
+    Small hover tooltip for info icons.
+    """
+
+    def __init__(self, widget, text):
+        # Store the widget that owns the tooltip.
+        self.widget = widget
+
+        # Store the tooltip message.
+        self.text = text
+
+        # Toplevel window starts as missing.
+        self.tip_window = None
+
+        # Show tooltip when mouse enters widget.
+        self.widget.bind("<Enter>", self.show)
+
+        # Hide tooltip when mouse leaves widget.
+        self.widget.bind("<Leave>", self.hide)
+
+    def show(self, event=None):
+        # Do not open another tooltip if one already exists.
+        if self.tip_window is not None:
+            return
+
+        # Get widget screen position.
+        x = self.widget.winfo_rootx() + 18
+        y = self.widget.winfo_rooty() + 18
+
+        # Create tooltip as a borderless popup.
+        self.tip_window = tk.Toplevel(self.widget)
+
+        # Remove normal window border.
+        self.tip_window.wm_overrideredirect(True)
+
+        # Position popup near the info icon.
+        self.tip_window.wm_geometry(f"+{x}+{y}")
+
+        # Tooltip label.
+        tk.Label(
+            self.tip_window,
+            text=self.text,
+            bg="#111827",
+            fg="white",
+            font=(FONT_BRAND, 8),
+            padx=8,
+            pady=5,
+            justify="left",
+            wraplength=230
+        ).pack()
+
+    def hide(self, event=None):
+        # Destroy tooltip if it exists.
+        if self.tip_window is not None:
+            self.tip_window.destroy()
+            self.tip_window = None
+
+
+def _info_icon(parent, text):
+    """
+    Creates a small hoverable info icon.
+    """
+
+    # Create the small info marker.
+    icon = tk.Label(
+        parent,
+        text="ⓘ",
+        bg=CARD_BG,
+        fg=TEXT_MUTED,
+        font=(FONT_BRAND, 9, "bold"),
+        cursor="question_arrow"
+    )
+
+    # Attach tooltip behavior.
+    HoverTip(icon, text)
+
+    # Return icon so caller can grid/pack it.
+    return icon
+
+
+class FilledSliderInput(tk.Frame):
+    """
+    Custom slider row with:
+    - filled blue track
+    - draggable knob
+    - editable numeric entry box
+    - unit label
+    """
+
+    def __init__(
+        self,
+        parent,
+        variable,
+        from_,
+        to,
+        unit,
+        command=None,
+        width=220,
+        height=28,
+    ):
+        # Initialize the parent frame.
+        super().__init__(parent, bg=CARD_BG)
+
+        # Store linked Tk variable.
+        self.variable = variable
+
+        # Store slider range.
+        self.from_ = from_
+        self.to = to
+
+        # Store unit text.
+        self.unit = unit
+
+        # Store callback function.
+        self.command = command
+
+        # Store canvas dimensions.
+        self.slider_width = width
+        self.slider_height = height
+
+        # Canvas draws track, fill, and knob.
+        self.canvas = tk.Canvas(
+            self,
+            width=self.slider_width,
+            height=self.slider_height,
+            bg=CARD_BG,
+            highlightthickness=0
+        )
+        self.canvas.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+
+        # Entry lets user type exact value.
+        self.entry = tk.Entry(
+            self,
+            width=6,
+            justify="center",
+            textvariable=self.variable,
+            font=(FONT_BRAND, 10),
+            relief="flat",
+            bg="white",
+            fg=TEXT_DARK,
+            highlightthickness=1,
+            highlightbackground=CARD_BORDER,
+            highlightcolor=TECHMI_BLUE
+        )
+        self.entry.grid(row=0, column=1, sticky="e", padx=(0, 6))
+
+        # Unit label goes after the input.
+        tk.Label(
+            self,
+            text=self.unit,
+            bg=CARD_BG,
+            fg=TEXT_DARK,
+            font=(FONT_BRAND, 10, "bold")
+        ).grid(row=0, column=2, sticky="w")
+
+        # Let canvas column stretch.
+        self.grid_columnconfigure(0, weight=1)
+
+        # Redraw when the variable changes.
+        self.variable.trace_add("write", lambda *_: self.draw())
+
+        # Update value when user clicks/drags slider.
+        self.canvas.bind("<Button-1>", self._on_mouse)
+
+        # Update value while user drags.
+        self.canvas.bind("<B1-Motion>", self._on_mouse)
+
+        # Validate typed value when Enter is pressed.
+        self.entry.bind("<Return>", self._on_entry_commit)
+
+        # Validate typed value when entry loses focus.
+        self.entry.bind("<FocusOut>", self._on_entry_commit)
+
+        # Initial draw.
+        self.draw()
+
+    def _value_to_x(self, value):
+        # Padding keeps knob from being cut off.
+        pad = 10
+
+        # Convert value to 0..1 range.
+        ratio = (float(value) - self.from_) / (self.to - self.from_)
+
+        # Clamp ratio.
+        ratio = max(0.0, min(1.0, ratio))
+
+        # Convert ratio to x position.
+        return pad + ratio * (self.slider_width - 2 * pad)
+
+    def _x_to_value(self, x):
+        # Padding keeps knob inside canvas.
+        pad = 10
+
+        # Clamp x to usable slider area.
+        x = max(pad, min(self.slider_width - pad, x))
+
+        # Convert x to 0..1 ratio.
+        ratio = (x - pad) / (self.slider_width - 2 * pad)
+
+        # Convert ratio to actual value.
+        value = self.from_ + ratio * (self.to - self.from_)
+
+        # Camera settings use integer values.
+        return int(round(value))
+
+    def _on_mouse(self, event):
+        # Convert mouse x position to slider value.
+        value = self._x_to_value(event.x)
+
+        # Store value in linked variable.
+        self.variable.set(value)
+
+        # Run callback if provided.
+        if self.command is not None:
+            self.command(value)
+
+    def _on_entry_commit(self, event=None):
+        try:
+            # Read typed value.
+            value = int(float(self.variable.get()))
+        except Exception:
+            # Reset to minimum if input is invalid.
+            value = self.from_
+
+        # Clamp typed value.
+        value = max(self.from_, min(self.to, value))
+
+        # Store clamped value.
+        self.variable.set(value)
+
+        # Run callback if provided.
+        if self.command is not None:
+            self.command(value)
+
+    def draw(self):
+        # Clear old drawing.
+        self.canvas.delete("all")
+
+        # Track geometry.
+        y = self.slider_height // 2
+        pad = 10
+
+        # Try reading current value.
+        try:
+            value = float(self.variable.get())
+        except Exception:
+            value = self.from_
+
+        # Clamp value.
+        value = max(self.from_, min(self.to, value))
+
+        # Get knob x position.
+        x = self._value_to_x(value)
+
+        # Draw gray background track.
+        self.canvas.create_line(
+            pad,
+            y,
+            self.slider_width - pad,
+            y,
+            fill="#d9dee8",
+            width=4,
+            capstyle=tk.ROUND
+        )
+
+        # Draw blue filled track.
+        self.canvas.create_line(
+            pad,
+            y,
+            x,
+            y,
+            fill=TECHMI_BLUE,
+            width=4,
+            capstyle=tk.ROUND
+        )
+
+        # Draw slider knob.
+        self.canvas.create_oval(
+            x - 7,
+            y - 7,
+            x + 7,
+            y + 7,
+            fill=TECHMI_BLUE,
+            outline=TECHMI_BLUE
+        )
 class CameraPanelMixin:
     """
     GUI section mixin split out of the original SensorGUI class.
@@ -106,6 +393,7 @@ class CameraPanelMixin:
                      bg=CARD_BG, fg=TEXT_MUTED,
                      font=(FONT_BRAND, 8)).pack(side=tk.RIGHT)
 
+    
     
     def _draw_preview_placeholder(self):
             """
@@ -344,65 +632,71 @@ class CameraPanelMixin:
 
     def _build_camera_settings_panel(self, parent, row=0):
         """
-        Builds the compact camera settings card.
+        Builds the Camera Settings panel using a 3-column layout.
 
-        The old version stacked everything vertically, which made the right
-        column too tall. This version uses a compact grid so exposure profile,
-        sliders, and save/reset controls fit in the same card.
+        Left column:
+            Exposure profile selector.
+
+        Middle column:
+            Exposure and gain sliders with text inputs.
+
+        Right column:
+            Warning message and save/reset buttons.
         """
 
-        # Let the card fill the slot frame given by gui_layout.py.
+        # Let this panel fill its slot.
         parent.grid_rowconfigure(row, weight=1)
         parent.grid_columnconfigure(0, weight=1)
 
-        # Create the card.
+        # Create card.
         card, c = _card(parent, "CAMERA SETTINGS", "☷")
         card.grid(row=row, column=0, sticky="nsew")
 
-        # Three internal columns:
-        # column 0 = profile buttons
-        # column 1 = sliders
-        # column 2 = save/reset buttons
-        c.grid_columnconfigure(0, weight=0)
-        c.grid_columnconfigure(1, weight=1)
-        c.grid_columnconfigure(2, weight=0)
+        # Five-column grid:
+        # 0 = profile column
+        # 1 = divider
+        # 2 = slider column
+        # 3 = divider
+        # 4 = actions/warning column
+        c.grid_columnconfigure(0, weight=1)
+        c.grid_columnconfigure(1, weight=0)
+        c.grid_columnconfigure(2, weight=2)
+        c.grid_columnconfigure(3, weight=0)
+        c.grid_columnconfigure(4, weight=1)
 
-        # Warning message across the full card.
-        tk.Label(
-            c,
-            text="⚠  Disable camera auto settings manually before running",
-            fg=WARNING,
-            bg=CARD_BG,
-            font=(FONT_BRAND, 8, "bold"),
-            anchor="w",
-            justify="left"
-        ).grid(
+        # Let content rows stay compact.
+        c.grid_rowconfigure(0, weight=1)
+
+        # ── Left column: exposure profile ─────────────────────────────────
+        profile_col = tk.Frame(c, bg=CARD_BG)
+        profile_col.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        profile_col.grid_columnconfigure(0, weight=1)
+
+        # Label row with info icon.
+        profile_label_row = tk.Frame(profile_col, bg=CARD_BG)
+        profile_label_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        profile_label_row.grid_columnconfigure(0, weight=1)
+
+        _section_label(profile_label_row, "Exposure Profile").grid(
             row=0,
             column=0,
-            columnspan=3,
-            sticky="ew",
-            pady=(0, 6)
+            sticky="w"
         )
 
-        # ── Exposure profile column ────────────────────────────────────────
-        _section_label(c, "Exposure Profile").grid(
-            row=1,
-            column=0,
-            sticky="w",
-            pady=(0, 3)
-        )
+        _info_icon(
+            profile_label_row,
+            "Choose which saved camera profile is active. Normal is used for setup/preview. Low is used for laser capture."
+        ).grid(row=0, column=1, sticky="e")
 
-        profile_frame = tk.Frame(c, bg=CARD_BG)
-        profile_frame.grid(
-            row=2,
-            column=0,
-            rowspan=3,
-            sticky="nw",
-            padx=(0, 16)
-        )
+        # Profile buttons row.
+        profile_buttons = tk.Frame(profile_col, bg=CARD_BG)
+        profile_buttons.grid(row=1, column=0, sticky="ew")
+        profile_buttons.grid_columnconfigure(0, weight=1)
+        profile_buttons.grid_columnconfigure(1, weight=1)
 
+        # Normal profile button.
         self._norm_btn = tk.Button(
-            profile_frame,
+            profile_buttons,
             text="Normal",
             relief="flat",
             bd=0,
@@ -412,14 +706,15 @@ class CameraPanelMixin:
             activeforeground="white",
             font=(FONT_BRAND, 9, "bold"),
             padx=10,
-            pady=4,
+            pady=5,
             cursor="hand2",
             command=lambda: self._switch_cam_profile("normal")
         )
-        self._norm_btn.pack(side=tk.TOP, fill=tk.X, pady=(0, 4))
+        self._norm_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
+        # Low profile button.
         self._low_btn = tk.Button(
-            profile_frame,
+            profile_buttons,
             text="Low",
             relief="flat",
             bd=0,
@@ -429,118 +724,124 @@ class CameraPanelMixin:
             activeforeground="white",
             font=(FONT_BRAND, 9),
             padx=10,
-            pady=4,
+            pady=5,
             cursor="hand2",
             highlightthickness=1,
             highlightbackground=CARD_BORDER,
             command=lambda: self._switch_cam_profile("low")
         )
-        self._low_btn.pack(side=tk.TOP, fill=tk.X)
+        self._low_btn.grid(row=0, column=1, sticky="ew", padx=(4, 0))
 
-        # ── Slider column ──────────────────────────────────────────────────
-        _section_label(c, "Exposure").grid(
-            row=1,
-            column=1,
-            sticky="w",
-            pady=(0, 2)
+       
+        # ── Divider 1 ─────────────────────────────────────────────────────
+        tk.Frame(
+            c,
+            bg=CARD_BORDER,
+            width=1
+        ).grid(row=0, column=1, sticky="ns", padx=(0, 12))
+
+        # ── Middle column: sliders ────────────────────────────────────────
+        slider_col = tk.Frame(c, bg=CARD_BG)
+        slider_col.grid(row=0, column=2, sticky="nsew", padx=(0, 12))
+        slider_col.grid_columnconfigure(0, weight=1)
+
+        # Exposure label row.
+        exposure_label_row = tk.Frame(slider_col, bg=CARD_BG)
+        exposure_label_row.grid(row=0, column=0, sticky="ew", pady=(0, 3))
+        exposure_label_row.grid_columnconfigure(0, weight=1)
+
+        _section_label(exposure_label_row, "Exposure").grid(
+            row=0,
+            column=0,
+            sticky="w"
         )
 
-        self._exposure_slider = tk.Scale(
-            c,
+        _info_icon(
+            exposure_label_row,
+            "Camera exposure controls how long the sensor collects light. Lower values usually reduce brightness and motion blur."
+        ).grid(row=0, column=1, sticky="e")
+
+        # Exposure slider with numeric input.
+        self._exposure_slider = FilledSliderInput(
+            slider_col,
+            variable=self.exposure_var,
             from_=-13,
             to=0,
-            resolution=1,
-            orient=tk.HORIZONTAL,
-            variable=self.exposure_var,
+            unit="EV",
             command=self._on_cam_slider_change,
-            bg=CARD_BG,
-            fg=TEXT_DARK,
-            troughcolor="#e8edf5",
-            activebackground=TECHMI_BLUE,
-            highlightthickness=0,
-            sliderrelief="flat",
-            length=260,
-            showvalue=True
+            width=240
         )
-        self._exposure_slider.grid(
-            row=2,
-            column=1,
-            sticky="ew",
-            pady=(0, 4)
+        self._exposure_slider.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+
+        # Gain label row.
+        gain_label_row = tk.Frame(slider_col, bg=CARD_BG)
+        gain_label_row.grid(row=2, column=0, sticky="ew", pady=(0, 3))
+        gain_label_row.grid_columnconfigure(0, weight=1)
+
+        _section_label(gain_label_row, "Gain").grid(
+            row=0,
+            column=0,
+            sticky="w"
         )
 
-        _section_label(c, "Gain").grid(
-            row=3,
-            column=1,
-            sticky="w",
-            pady=(0, 2)
-        )
+        _info_icon(
+            gain_label_row,
+            "Camera gain digitally boosts brightness. Higher gain can make the image brighter but usually adds noise."
+        ).grid(row=0, column=1, sticky="e")
 
-        self._gain_slider = tk.Scale(
-            c,
+        # Gain slider with numeric input.
+        self._gain_slider = FilledSliderInput(
+            slider_col,
+            variable=self.gain_var,
             from_=0,
             to=255,
-            resolution=1,
-            orient=tk.HORIZONTAL,
-            variable=self.gain_var,
+            unit="dB",
             command=self._on_cam_slider_change,
+            width=240
+        )
+        self._gain_slider.grid(row=3, column=0, sticky="ew")
+
+        # ── Divider 2 ─────────────────────────────────────────────────────
+        tk.Frame(
+            c,
+            bg=CARD_BORDER,
+            width=1
+        ).grid(row=0, column=3, sticky="ns", padx=(0, 12))
+
+        # ── Right column: warning and buttons ─────────────────────────────
+        action_col = tk.Frame(c, bg=CARD_BG)
+        action_col.grid(row=0, column=4, sticky="nsew")
+        action_col.grid_columnconfigure(0, weight=1)
+
+        # Warning label.
+        tk.Label(
+            action_col,
+            text="⚠  Disable camera auto settings manually before running.",
+            fg=WARNING,
             bg=CARD_BG,
-            fg=TEXT_DARK,
-            troughcolor="#e8edf5",
-            activebackground=TECHMI_BLUE,
-            highlightthickness=0,
-            sliderrelief="flat",
-            length=260,
-            showvalue=True
-        )
-        self._gain_slider.grid(
-            row=4,
-            column=1,
-            sticky="ew",
-            pady=(0, 0)
-        )
+            font=(FONT_BRAND, 8, "bold"),
+            anchor="w",
+            justify="left",
+            wraplength=180
+        ).grid(row=0, column=0, sticky="ew", pady=(0, 8))
 
-        # ── Save/reset column ──────────────────────────────────────────────
-        button_frame = tk.Frame(c, bg=CARD_BG)
-        button_frame.grid(
-            row=2,
-            column=2,
-            rowspan=3,
-            sticky="ne",
-            padx=(16, 0)
-        )
-
+        # Save profile button.
         _btn(
-            button_frame,
-            "💾  Save",
+            action_col,
+            "💾  Save Profile",
             self._save_cam_profile,
             "primary"
-        ).pack(fill=tk.X, pady=(0, 6))
+        ).grid(row=1, column=0, sticky="ew", pady=(0, 6))
 
+        # Reset button.
         _btn(
-            button_frame,
-            "↺  Reset",
+            action_col,
+            "↺  Reset to Default",
             self._reset_cam_profile,
             "secondary"
-        ).pack(fill=tk.X)
+        ).grid(row=2, column=0, sticky="ew")
 
-        # Small status label under the card controls.
-        self._cam_status_var = tk.StringVar(value="")
-        tk.Label(
-            c,
-            textvariable=self._cam_status_var,
-            fg=SUCCESS,
-            bg=CARD_BG,
-            font=(FONT_BRAND, 8),
-            anchor="w"
-        ).grid(
-            row=5,
-            column=0,
-            columnspan=3,
-            sticky="ew",
-            pady=(4, 0)
-        )
-
+        
     def _switch_cam_profile(self, name: str):
             self.cam_profile.set(name)
             self._norm_btn.configure(
@@ -582,7 +883,6 @@ class CameraPanelMixin:
                 "gain":     self.gain_var.get(),
             }
             save_camera_profile(profile_name, profile)
-            self._cam_status_var.set(f"Saved {profile_name} profile.")
             self._append_log(f"Camera profile '{profile_name}' saved.", "blue")
 
     def _reset_cam_profile(self):
@@ -592,7 +892,6 @@ class CameraPanelMixin:
                 save_camera_settings(defaults)
                 self._load_camera_profile_into_ui(profile_name)
                 self._apply_cam_settings_to_preview()
-                self._cam_status_var.set(f"Reset {profile_name} to defaults.")
                 self._append_log(
                     f"Camera profile '{profile_name}' reset to defaults.", "blue")
 
