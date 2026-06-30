@@ -134,7 +134,7 @@ class RecoverySettingsMixin:
 
         win = tk.Toplevel(self.root)
         win.title("Settings")
-        win.geometry("440x340")
+        win.geometry("600x600")
         win.configure(bg=OFF_WHITE)
         win.resizable(False, False)
         win.grab_set()
@@ -214,6 +214,79 @@ class RecoverySettingsMixin:
                  font=(FONT_BRAND, 10),
                  wraplength=260,
                  anchor="w").pack(side=tk.LEFT)
+        
+
+        # ── ArUco Error Handling ──────────────────────────────────────────────
+                # ── ArUco Error Handling ──────────────────────────────────────────────
+        tk.Frame(win, bg=CARD_BORDER, height=1).pack(fill=tk.X, padx=28, pady=(12, 8))
+
+        tk.Label(win,
+                 text="ArUco Error Handling",
+                 fg=NAVY,
+                 bg=OFF_WHITE,
+                 font=(FONT_BRAND, 11, "bold")).pack(anchor="w", padx=28)
+
+        # Initialize vars the first time the window is opened.
+        if not hasattr(self, "_continue_with_prev_roi_var"):
+            self._continue_with_prev_roi_var = tk.BooleanVar(value=True)
+        if not hasattr(self, "_max_aruco_failures_var"):
+            self._max_aruco_failures_var = tk.StringVar(value="3")
+
+        # Checkbox: continue using previous ROI (on by default).
+        chk_frame = tk.Frame(win, bg=OFF_WHITE)
+        chk_frame.pack(fill=tk.X, padx=28, pady=(6, 2))
+
+        chk = tk.Checkbutton(
+            chk_frame,
+            text="Continue using previous ROI when markers disappear",
+            variable=self._continue_with_prev_roi_var,
+            bg=OFF_WHITE,
+            fg=TEXT_DARK,
+            font=(FONT_BRAND, 11),
+            activebackground=OFF_WHITE,
+            command=lambda: _toggle_aruco_dropdown()
+        )
+        chk.pack(side=tk.LEFT)
+
+        # Indented row for the consecutive-failures dropdown.
+        fail_frame = tk.Frame(win, bg=OFF_WHITE)
+        fail_frame.pack(fill=tk.X, padx=52, pady=(0, 4))  # extra left indent
+
+        tk.Label(fail_frame,
+                 text="Stop after consecutive capture failures:",
+                 fg=TEXT_MUTED,
+                 bg=OFF_WHITE,
+                 font=(FONT_BRAND, 10)).pack(side=tk.LEFT, padx=(0, 8))
+
+        failure_dropdown = tk.OptionMenu(
+            fail_frame,
+            self._max_aruco_failures_var,
+            "1", "2", "3", "5", "10"
+        )
+        failure_dropdown.configure(
+            font=(FONT_BRAND, 10),
+            bg="white",
+            fg=TEXT_DARK,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=CARD_BORDER
+        )
+        failure_dropdown.pack(side=tk.LEFT)
+
+        def _toggle_aruco_dropdown():
+            # Dropdown is only usable when the checkbox is OFF.
+            state = "disabled" if self._continue_with_prev_roi_var.get() else "normal"
+            failure_dropdown.configure(state=state)
+            for child in fail_frame.winfo_children():
+                try:
+                    child.configure(state=state)
+                except tk.TclError:
+                    pass
+
+        # Set initial dropdown state to match the checkbox default.
+        _toggle_aruco_dropdown()
+
+
 
         # ── Divider + action buttons ──────────────────────────────────────────
         tk.Frame(win, bg=CARD_BORDER, height=1).pack(fill=tk.X, padx=28, pady=16)

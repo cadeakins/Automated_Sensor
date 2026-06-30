@@ -89,12 +89,19 @@ class BackendActionsMixin:
                 return
 
             try:
+                # Read ArUco recovery settings (defaults used if never opened Settings).
+                continue_roi = getattr(self, "_continue_with_prev_roi_var",
+                                       None)
+                max_fails    = getattr(self, "_max_aruco_failures_var", None)
+
                 run_id = self.controller.start_experiment(
                     microorganism_type=organism,
                     camera_index=cam_idx,
                     duration_seconds=duration,
                     interval_seconds=interval,
-                    output_root=self.current_folder
+                    output_root=self.current_folder,
+                    continue_with_prev_roi=continue_roi.get() if continue_roi else True,
+                    max_consecutive_failures=int(max_fails.get()) if max_fails else 3
                 )
                 self.run_id_var.set(str(run_id))
                 self.status.set("Running")
@@ -149,6 +156,7 @@ class BackendActionsMixin:
             run_folder= st.get("run_folder",               None)
             last_img  = st.get("last_saved_image",         None)
             last_msg  = st.get("last_message",             "Idle")
+            last_msg_category = st.get("last_message_category", "green")
             run_ok    = st.get("run_completed_successfully", False)
 
             alert_msg = st.get("alert_message", None)
@@ -217,7 +225,7 @@ class BackendActionsMixin:
             if last_msg and last_msg != self.last_msg_var.get():
                 self.last_msg_var.set(last_msg)
                 if self.controller.is_running:
-                    self._append_log(last_msg, "green")
+                    self._append_log(last_msg, last_msg_category)
 
             # System ready indicator
             ready_text = "⬤  System Ready" if not self.controller.is_running \

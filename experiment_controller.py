@@ -38,6 +38,7 @@ class ExperimentController :
             "last_saved_image": None, # Most recently saved image path
             "run_folder": None, # Store current run folder path
             "last_message": "Idle", # Most recent status message
+            "last_message_category": "green", # Log color for last_message
             "alert_message": None, # For specific error handling
             "alert_id" : 0, # For popup handling
             "run_completed_successfully": False # False by default until actually completes correctly
@@ -50,7 +51,9 @@ class ExperimentController :
             camera_index,
             duration_seconds,
             interval_seconds,
-            output_root="current"
+            output_root="current",
+            continue_with_prev_roi=True,
+            max_consecutive_failures=3
     ):
         # Is experiment already running?
         if self.is_running : 
@@ -89,8 +92,10 @@ class ExperimentController :
             run_id,
             duration_seconds,
             interval_seconds,
-            output_root),
-            daemon = True # Thread closes automatically when main program exits
+            output_root,
+            continue_with_prev_roi,
+            max_consecutive_failures),
+            daemon=True  # Thread closes automatically when main program exits
         )
 
         # Mark experiment as running
@@ -107,7 +112,9 @@ class ExperimentController :
         run_id,
         duration_seconds,
         interval_seconds,
-        output_root
+        output_root,
+        continue_with_prev_roi,
+        max_consecutive_failures
 ):
         """
         Runs the experiment in a background thread.
@@ -144,7 +151,9 @@ class ExperimentController :
                 interval_seconds=interval_seconds,
                 output_root=output_root,
                 stop_event=self.stop_event,
-                status_callback=self.update_status
+                status_callback=self.update_status,
+                continue_with_prev_roi=continue_with_prev_roi,
+                max_consecutive_failures=max_consecutive_failures
             )
 
             # Check if the stop button was not requested.

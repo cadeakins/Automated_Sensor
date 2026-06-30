@@ -16,7 +16,7 @@ from camera import open_camera, set_normal_exposure
 from aruco import detect_aruco_markers, get_roi_corners
 from laser_control import LaserRelay
 
-# ── Brand colours (shared constants) ──────────────────────────────────────────
+# ── Brand colors (shared constants) ──────────────────────────────────────────
 NAVY       = "#081225"
 NAVY_2     = "#101b33"
 TECHMI_BLUE= "#233dff"

@@ -361,12 +361,13 @@ class RunStatusLogMixin:
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.configure(command=self.log_text.yview)
 
-        # ── Colour tag definitions ────────────────────────────────────────────
-        self.log_text.tag_configure("gray",  foreground="#6b7280")
-        self.log_text.tag_configure("blue",  foreground="#2563eb")
-        self.log_text.tag_configure("green", foreground=SUCCESS)
-        self.log_text.tag_configure("red",   foreground=DANGER)
-        self.log_text.tag_configure("time",  foreground=TEXT_MUTED)
+        # ── Color tag definitions ────────────────────────────────────────────
+        self.log_text.tag_configure("gray",   foreground="#6b7280")
+        self.log_text.tag_configure("blue",   foreground="#2563eb")
+        self.log_text.tag_configure("green",  foreground=SUCCESS)
+        self.log_text.tag_configure("red",    foreground=DANGER)
+        self.log_text.tag_configure("yellow", foreground="#cda30b")
+        self.log_text.tag_configure("time",   foreground=TEXT_MUTED)
 
         # First log entry
         self._append_log("System started.", "gray")
