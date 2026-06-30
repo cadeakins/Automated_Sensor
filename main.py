@@ -1,11 +1,3 @@
-import cv2 as cv
-import matplotlib.pyplot as plt
-from datetime import datetime
-import time
-
-
-from organism_menu import choose_organism
-from experiment_controller import ExperimentController
 from gui_app import SensorGUI
 from config import CURRENT_FOLDER, TRAINING_FOLDER
 

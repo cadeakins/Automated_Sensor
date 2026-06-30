@@ -38,6 +38,8 @@ def run_experiment(
         output_root:
             Main folder where active experiment data is stored
     """
+    consecutive_capture_failures = 0
+    max_consecutive_capture_failures = 3
 
     def send_status(**kwargs) : 
         """
@@ -77,6 +79,9 @@ def run_experiment(
     )
 
     finish_reason = "unknown"
+    fatal_error_text = None
+
+    clean_finish_reasons = ["duration_reached", "user_stopped"]
 
     try:
         while True:
@@ -89,7 +94,7 @@ def run_experiment(
             current_time = time.monotonic()
             elapsed_time = current_time - start_time
 
-            send_status(elapsed_seconds=elapsed_time)
+            send_status(elapsed_seconds=elapsed_time, duration_seconds=duration_seconds)
 
             # Stop once duration reached
             if elapsed_time >= duration_seconds:
@@ -106,7 +111,9 @@ def run_experiment(
                 
                 try:
                     # Run complete measurement sequence
-                    laser_only = capture_measurement(cap, laser)
+                    laser_only = capture_measurement(cap, laser, status_callback=send_status)
+
+                    consecutive_capture_failures = 0 # Successful capture
 
                     is_final_capture = (next_capture_time + interval_seconds >= experiment_end_time)
 
@@ -129,7 +136,7 @@ def run_experiment(
                     send_status(
                         capture_count=capture_number + 1,
                         last_saved_image=str(filepath),
-                        last_message=f"Saved {filepath.name}",
+                        last_message=f"Saved image",
                         last_error=None,
                         last_capture_result="Success"
                     )
@@ -140,32 +147,76 @@ def run_experiment(
                     error_text = str(error)
                     print(f"Capture failed: {error}")
 
+                    if "RELAY_FAILURE" in error_text : 
+                        send_status(state="error", last_error=error_text, last_message=f"Fatal relay failure: {error_text}")
+                        raise RuntimeError(error_text)
+
+                    consecutive_capture_failures += 1
+
                     if "ARUCO_NOT_FOUND" in error_text : 
                         send_status(
                             last_capture_result="ArUco markers missing",
                             last_error=error_text,
-                            alert_message="Could not detect all four ArUco markers.\n\n"
+                            alert_message="Could not detect all four ArUco markers.\n\n",
                         )      
                     else : 
-                        send_status(last_capture_result="Failed", last_message=error_text)
+                        send_status(
+                            state="warning", 
+                            last_capture_result="Failed", 
+                            last_error=error_text,
+                            last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_capture_failures} : {error_text} "
+                            )
 
+
+                    if consecutive_capture_failures >= max_consecutive_capture_failures : 
+                        raise RuntimeError(f"Fatal camera/capture failure: {error}")
                 # Schedule next capture from original timeline
                 next_capture_time += interval_seconds
             
+            send_status(last_message="Waiting for next capture...")
             time.sleep(0.1)
 
+    # Fatal capture, saving, camera, or relay failure
+    except RuntimeError as error:
+        fatal_error_text = str(error)
+        finish_reason = "fatal_error"
+
+        send_status(
+            state="error",
+            last_error=fatal_error_text,
+            last_message=f"Fatal experiment error: {fatal_error_text}"
+        )
+        # Re-raise error so ExperimentController knows run failed
+        raise
     except KeyboardInterrupt:
         print("\nExperiment manually stopped.")
         finish_reason = "user_stopped"
 
-    finally :
-        write_done_file(
-            run_folder=run_folder,
-            run_id=run_id,
-            capture_count=capture_number,
-            reason=finish_reason
+        send_status(
+            state="stopped",
+            last_message="Experiment manually stopped"
         )
 
+    finally :
+        # Only write DONE.json if experiment if experiment finished successfully
+        if finish_reason in clean_finish_reasons : 
+            write_done_file(
+                run_folder=run_folder,
+                run_id=run_id,
+                capture_count=capture_number,
+                reason=finish_reason
+            )
+
+        
+
+        if laser is not None :  # Just in case failure occurs
+            try :
+                laser.off()
+
+            except RuntimeError : 
+                pass # Continue if laser cleanup fails
+
+        
     print(f"Experiment finished with {capture_number} saved images.")
     return run_folder
 
