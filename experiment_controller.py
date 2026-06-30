@@ -303,8 +303,13 @@ class ExperimentController :
         self.update_status(
             state="stopping",
             last_message="Stop requested...",
-            run_completed_successfully = False
+            run_completed_successfully = False,
+            duration_seconds=0, # For progress bar
+            capture_count=0,
+            alert_id=0, # For popup handling
+            elapsed_seconds=0,
         )
+
 
 
     def thread_is_alive(self) : 
