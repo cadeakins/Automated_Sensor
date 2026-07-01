@@ -14,6 +14,7 @@ import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
+from tkinter import filedialog
 
 from gui_theme import (
     CARD_BG,
@@ -40,6 +41,7 @@ from startup_recovery import (
 )
 from camera_tools import camera_can_capture
 from laser_control import LaserRelay
+from config import save_app_settings, load_app_settings
 
 # How often the background health check runs (camera/laser/storage).
 HEALTH_CHECK_INTERVAL_MS = 5000
@@ -334,7 +336,7 @@ class RecoverySettingsMixin:
 
         win = tk.Toplevel(self.root)
         win.title("Settings")
-        win.geometry("750x600")
+        win.geometry("800x600")
         win.configure(bg=OFF_WHITE)
         win.resizable(False, False)
         win.grab_set()
@@ -402,6 +404,7 @@ class RecoverySettingsMixin:
         # ── Data root (read-only display) ─────────────────────────────────────
         fr3 = tk.Frame(win, bg=OFF_WHITE)
         fr3.pack(fill=tk.X, padx=28, pady=6)
+
         tk.Label(fr3,
                  text="Data Root:",
                  fg=TEXT_DARK,
@@ -410,14 +413,33 @@ class RecoverySettingsMixin:
                  width=20,
                  anchor="w").pack(side=tk.LEFT)
 
+        if not hasattr(self, "_data_root_var") : 
+            self._data_root_var = tk.StringVar(value=str(self.current_folder.parent))
+
         tk.Label(fr3,
-                 text=str(self.current_folder.parent),
+                 textvariable=self._data_root_var,
                  fg=TEXT_MUTED,
                  bg=OFF_WHITE,
                  font=(FONT_BRAND, 10),
-                 wraplength=260,
-                 anchor="w").pack(side=tk.LEFT)
+                 wraplength=500,
+                 anchor="w",
+                 justify="left").pack(side=tk.LEFT)
         
+        def _browse() : 
+            chosen = filedialog.askdirectory(title="Select Data Root Folder", initialdir=self._data_root_var.get())
+            if chosen : 
+                self._data_root_var.set(chosen)
+
+        browse_btn = _btn(fr3, "Browse", _browse, "primary")
+        browse_btn.pack(side=tk.LEFT, padx=(24,0))
+
+        if self.controller.is_running :
+            browse_btn.configure(state="disabled")
+            tk.Label(fr3,
+                     text="(stop experiment to change)",
+                     fg=TEXT_MUTED,
+                     bg=OFF_WHITE,
+                     font=(FONT_BRAND, 9)).pack(side=tk.LEFT, padx=(4,0))
 
         # ── ArUco Error Handling ──────────────────────────────────────────────
                 # ── ArUco Error Handling ──────────────────────────────────────────────
@@ -494,6 +516,22 @@ class RecoverySettingsMixin:
         # ── Divider + action buttons ──────────────────────────────────────────
         tk.Frame(win, bg=CARD_BORDER, height=1).pack(fill=tk.X, padx=28, pady=16)
 
+        if self.controller.is_running:
+            tk.Label(win,
+                    text="⚠  Settings locked while experiment is running.",
+                    fg=DANGER,
+                    bg=OFF_WHITE,
+                    font=(FONT_BRAND, 9, "bold")).pack(pady=(0, 8))
+            
+            def _disable_all(parent) :
+                for child in parent.winfo_children() : 
+                    try :
+                        child.configure(state="disabled")
+                    except tk.TclError : 
+                        pass
+                    _disable_all(child)
+            _disable_all(win)
+
         btn_row = tk.Frame(win, bg=OFF_WHITE)
         btn_row.pack(padx=28)
 
@@ -523,6 +561,29 @@ class RecoverySettingsMixin:
         """
         Saves settings and closes the Settings window.
         """
+        
+        if not self.controller.is_running : 
+            new_root = getattr(self, "_data_root_var", None)
+            if new_root:
+                current_root = str(self.current_folder.parent)
+                new_root_str = new_root.get()
+                if new_root.get() != current_root: 
+                    settings = load_app_settings()
+                    settings["data_root"] = new_root.get()
+                    save_app_settings(settings)
+                    
+                    # Hot swap live paths, should ONLY be done in idle state
+                    from pathlib import Path
+                    self.current_folder=  Path(new_root_str) / "current"
+                    self.training_folder = Path(new_root_str) / "training"
+                    self.current_folder.mkdir(parents=True, exist_ok=True)
+                    self.training_folder.mkdir(parents=True, exist_ok=True)
+
+                    # Force recovery panel to rescan against new location
+                    self._recovery_dirty = True
+
+                    self._append_log(f"Data root changed to {new_root_str}.", "gray")
+
         # LaserRelay will use the COM port on next open call
         win.destroy()
         self._append_log("Settings saved.", "gray")
