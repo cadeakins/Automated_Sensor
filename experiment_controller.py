@@ -53,7 +53,8 @@ class ExperimentController :
             interval_seconds,
             output_root="current",
             continue_with_prev_roi=True,
-            max_consecutive_failures=3
+            max_consecutive_failures=3,
+            laser_port=None,
     ):
         # Is experiment already running?
         if self.is_running : 
@@ -94,7 +95,8 @@ class ExperimentController :
             interval_seconds,
             output_root,
             continue_with_prev_roi,
-            max_consecutive_failures),
+            max_consecutive_failures,
+            laser_port),
             daemon=True  # Thread closes automatically when main program exits
         )
 
@@ -114,7 +116,8 @@ class ExperimentController :
         interval_seconds,
         output_root,
         continue_with_prev_roi,
-        max_consecutive_failures
+        max_consecutive_failures,
+        laser_port=None,
 ):
         """
         Runs the experiment in a background thread.
@@ -136,7 +139,7 @@ class ExperimentController :
                 raise RuntimeError("Could not open camera")
 
             # Create the laser relay object.
-            self.laser = LaserRelay()
+            self.laser = LaserRelay(port=laser_port)
 
             # Open the laser relay connection.
             self.laser.open()

@@ -101,7 +101,8 @@ class BackendActionsMixin:
                     interval_seconds=interval,
                     output_root=self.current_folder,
                     continue_with_prev_roi=continue_roi.get() if continue_roi else True,
-                    max_consecutive_failures=int(max_fails.get()) if max_fails else 3
+                    max_consecutive_failures=int(max_fails.get()) if max_fails else 3,
+                    laser_port=self._get_laser_port_override(),
                 )
                 self.run_id_var.set(str(run_id))
                 self.status.set("Running")

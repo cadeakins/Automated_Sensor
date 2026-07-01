@@ -334,7 +334,7 @@ class RecoverySettingsMixin:
 
         win = tk.Toplevel(self.root)
         win.title("Settings")
-        win.geometry("600x600")
+        win.geometry("750x600")
         win.configure(bg=OFF_WHITE)
         win.resizable(False, False)
         win.grab_set()
@@ -345,57 +345,60 @@ class RecoverySettingsMixin:
                  bg=OFF_WHITE,
                  font=(FONT_BRAND, 15, "bold")).pack(pady=(18, 14))
 
-        # ── Laser COM port ────────────────────────────────────────────────────
+        # ── Laser device selector ────────────────────────────────────────────────────
+        import serial.tools.list_ports as stlp
+
         fr = tk.Frame(win, bg=OFF_WHITE)
         fr.pack(fill=tk.X, padx=28, pady=6)
+        
         tk.Label(fr,
-                 text="Laser COM Port:",
+                 text="Laser Relay Device:",
                  fg=TEXT_DARK,
                  bg=OFF_WHITE,
                  font=(FONT_BRAND, 11),
                  width=20,
                  anchor="w").pack(side=tk.LEFT)
 
-        # Keep a StringVar so the value can be read back on save
-        if not hasattr(self, "_laser_port_var"):
-            self._laser_port_var = tk.StringVar(value="COM5")
+        if not hasattr(self, "_laser_port_var") : 
+            self._laser_port_var = tk.StringVar(value="Auto-detect")
 
-        tk.Entry(fr,
-                 textvariable=self._laser_port_var,
-                 width=10,
-                 font=(FONT_BRAND, 11),
-                 relief="flat",
-                 bd=1,
-                 bg="white",
-                 fg=TEXT_DARK,
-                 highlightthickness=1,
-                 highlightbackground=CARD_BORDER).pack(side=tk.LEFT)
+        def _get_port_options() :
+            try:  
+                ports = stlp.comports()
+                options = ["Auto-detect"]
+                for p in sorted(ports, key=lambda x: x.device) : 
+                    options.append(f"{p.device} - {p.description}")
+                if ports == None : 
+                    return ["Auto-detect"]
+                return options
+            except Exception : 
+                return ["Auto-detect"]
+            
+            
+            
+        port_options = _get_port_options()
 
-        # ── Manual camera index override ──────────────────────────────────────
-        fr2 = tk.Frame(win, bg=OFF_WHITE)
-        fr2.pack(fill=tk.X, padx=28, pady=6)
-        tk.Label(fr2,
-                 text="Force Camera Index:",
-                 fg=TEXT_DARK,
-                 bg=OFF_WHITE,
-                 font=(FONT_BRAND, 11),
-                 width=20,
-                 anchor="w").pack(side=tk.LEFT)
+        laser_menu = tk.OptionMenu(fr, self._laser_port_var, *port_options)
+        laser_menu.configure(
+            font=(FONT_BRAND, 10),
+            bg="white",
+            fg=TEXT_DARK,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=CARD_BORDER,
+            width=28
+        )
+        laser_menu.pack(side=tk.LEFT, padx=(0,0))
 
-        if not hasattr(self, "_force_cam_var"):
-            self._force_cam_var = tk.StringVar(value="")
+        def _refresh_ports() :
+            menu = laser_menu["menu"]
+            menu.delete(0, "end")
+            for opt in _get_port_options() :
+                menu.add_command(label=opt, command=lambda value=opt: self._laser_port_var.set(value))
 
-        tk.Entry(fr2,
-                 textvariable=self._force_cam_var,
-                 width=6,
-                 font=(FONT_BRAND, 11),
-                 relief="flat",
-                 bd=1,
-                 bg="white",
-                 fg=TEXT_DARK,
-                 highlightthickness=1,
-                 highlightbackground=CARD_BORDER).pack(side=tk.LEFT)
+        _btn(fr, "↻", _refresh_ports, "primary").pack(side=tk.LEFT)
 
+        
         # ── Data root (read-only display) ─────────────────────────────────────
         fr3 = tk.Frame(win, bg=OFF_WHITE)
         fr3.pack(fill=tk.X, padx=28, pady=6)
@@ -500,6 +503,21 @@ class RecoverySettingsMixin:
         _btn(btn_row, "Cancel",
              win.destroy,
              "secondary").pack(side=tk.LEFT)
+
+    def _get_laser_port_override(self): 
+        """
+        Returns the raw COM port string from the settings dropdown,
+        or None if "Auto-detect" is selected.
+        """
+        val = getattr(self, "_laser_port_var", None)
+        if val is None : 
+            return None
+        
+        raw = val.get()
+        if raw == "Auto-detect" or not raw : 
+            return None
+        # Value is formatted as "COM3 - Description", extract just the port
+        return raw.split(" - ")[0].strip()
 
     def _save_settings(self, win):
         """

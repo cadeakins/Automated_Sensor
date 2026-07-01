@@ -601,7 +601,7 @@ class CameraPanelMixin:
             if self._laser is None:
                 try:
                     from laser_control import LaserRelay
-                    self._laser = LaserRelay()
+                    self._laser = LaserRelay(port=self._get_laser_port_override())
                     self._laser.open()
                     self._laser.off()
                     self._laser_on = False
