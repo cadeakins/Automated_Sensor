@@ -338,7 +338,7 @@ class RunStatusLogMixin:
                         style="arc")
 
         # Percentage text in the centre
-        cv.create_text(cx, cy - 9,
+        cv.create_text(cx, cy - 2,
                     text=f"{int(pct)}%",
                     fill=TEXT_DARK,
                     font=(FONT_BRAND, 11, "bold"))
