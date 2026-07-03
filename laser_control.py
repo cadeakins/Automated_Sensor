@@ -7,10 +7,11 @@ class LaserRelay :
     Controls the USB relay to turn laser on and off
     """
 
-    def __init__(self, baudrate=9600, timeout=0.5, device_hint="CP210x"): 
+    def __init__(self, baudrate=9600, timeout=0.5, device_hint="CP210x", port=None): 
         self.baudrate = baudrate
         self.timeout = timeout
         self.device_hint = device_hint
+        self.port = port      # None = auto-detect, string = fixed port
         self.ser = None
 
     def find_port(self) :
@@ -31,10 +32,13 @@ class LaserRelay :
         Open serial connection to relay
         """
 
-        portname = self.find_port()
+        if self.port : 
+            portname = self.port
+        else : 
+            portname = self.find_port()
 
         if portname is None : 
-            raise RuntimeError("Laser relay device not found")
+            raise RuntimeError("Laser relay device not found.")
         
         try :
             self.ser = serial.Serial(portname, self.baudrate, timeout=self.timeout)

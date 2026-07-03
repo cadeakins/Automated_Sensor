@@ -40,8 +40,8 @@ class CameraSetupWindow :
 
         # Camera settings
         self.current_profile = tk.StringVar(value="normal")
-        self.exposure_value = tk.DoubleVar(value=0)
-        self.gain_value = tk.DoubleVar(value=0)
+        self.exposure_value = tk.IntVar(value=0)
+        self.gain_value = tk.IntVar(value=0)
         # Sliders are currently being loaded in from file
         self.loading_sliders = False
         self.settings_status = tk.StringVar(value="Settings: Loaded normal profile")
@@ -185,7 +185,6 @@ class CameraSetupWindow :
 
         return True # Opened successfully
         
-        set_normal_exposure(self.cap)
 
     def open_laser_relay(self) : 
         try : 
@@ -320,8 +319,8 @@ class CameraSetupWindow :
         """
 
         return {
-            "exposure": self.exposure_value.get(),
-            "gain": self.gain_value.get(),
+            "exposure": int(self.exposure_value.get()),
+            "gain": int(self.gain_value.get()),
         }
     
     def apply_slider_settings_to_camera(self) : 

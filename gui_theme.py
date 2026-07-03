@@ -155,7 +155,7 @@ def _btn(parent, text, cmd, kind="secondary", h=32, w=None, **kw):
         font=(FONT_BRAND, 10, "bold" if kind == "primary" else "normal"),
         padx=8,
         pady=3,
-        **style
+        **style 
     )
     config.update(kw)
 

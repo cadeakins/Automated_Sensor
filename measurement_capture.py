@@ -58,7 +58,7 @@ def find_roi(cap, max_attempts=5):
     return None
 
 
-def capture_measurement(cap, laser, status_callback=None):
+def capture_measurement(cap, laser, status_callback=None, fallback_roi=None):
     """
     Capture one complete laser measurement.
 
@@ -76,13 +76,20 @@ def capture_measurement(cap, laser, status_callback=None):
         cap:
             OpenCV VideoCapture object.
 
+    Parameters:
+        fallback_roi:
+            ROI corners from the previous successful capture. If provided and
+            ArUco detection fails, these corners are used instead of raising.
+
     Returns:
-        laser_only:
-            The aligned and background-subtracted laser image.
+        (laser_only, roi_corners_used):
+            The processed image and the ROI corners that were used, so the
+            caller can store them as the new fallback.
 
     Raises:
         RuntimeError:
-            Raised if marker detection, camera capture, or alignment fails.
+            Raised if marker detection fails with no fallback available,
+            or if camera capture or alignment fails.
     """
 
     def send_status(**kwargs) : 
@@ -93,12 +100,16 @@ def capture_measurement(cap, laser, status_callback=None):
             status_callback(**kwargs)
 
     # Find the target area's current position.
-    roi_corners = find_roi(cap)
     send_status(last_message="Finding ROI...")
+    roi_corners = find_roi(cap)
 
-    # Stop this measurement if all four markers were not detected.
+    # Use fallback ROI if markers were not detected and one is available.
     if roi_corners is None:
-        raise RuntimeError("ARUCO_NOT_FOUND: Could not detect all four ArUco markers")
+        if fallback_roi is not None:
+            send_status(last_message="ArUco markers not found — using previous ROI.")
+            roi_corners = fallback_roi
+        else:
+            raise RuntimeError("ARUCO_NOT_FOUND: Could not detect all four ArUco markers")
 
     # Use low exposure for both measurement images.
     set_low_exposure(cap)
@@ -167,8 +178,8 @@ def capture_measurement(cap, laser, status_callback=None):
     send_status(last_message="Subtracting background...")
 
 
-    # Return the processed image to main.py.
-    return laser_only
+    # Return the processed image and the ROI corners that were used.
+    return laser_only, roi_corners
 
 
 

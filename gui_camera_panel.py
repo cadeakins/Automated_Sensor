@@ -25,8 +25,6 @@ from gui_theme import (
 from camera_settings import (
     get_camera_profile,
     save_camera_profile,
-    get_default_camera_settings,
-    save_camera_settings
 )
 
 PREVIEW_WIDTH = 600
@@ -361,6 +359,7 @@ class CameraPanelMixin:
                 padx=12, pady=4, cursor="hand2"
             )
             self._laser_btn.pack(side=tk.RIGHT)
+            self._laser_btn.configure(state=tk.DISABLED)
 
             # Canvas
             self._PREV_W, self._PREV_H = PREVIEW_WIDTH, PREVIEW_HEIGHT
@@ -450,7 +449,8 @@ class CameraPanelMixin:
             Opens selected camera and starts live preview loop
             """
             try:
-                cam_idx = self.get_selected_camera_index()
+                cam_idx  = self.get_selected_camera_index()
+                cam_name = self.get_selected_camera_name()
             except RuntimeError as e:
                 messagebox.showerror("Camera Error", str(e))
                 return
@@ -468,6 +468,10 @@ class CameraPanelMixin:
 
             set_normal_exposure(self._preview_cap)
             self._preview_running = True
+            self._cam_display.configure(fg=TEXT_MUTED)
+            self._cam_arrow.configure(fg=TEXT_MUTED)
+            self._cam_fr.configure(highlightbackground=CARD_BORDER)
+            self._laser_btn.configure(state=tk.NORMAL)
             self._preview_toggle_btn.configure(
                 text="⏹  Preview ON",
                 bg=TECHMI_BLUE, fg="white"
@@ -477,6 +481,8 @@ class CameraPanelMixin:
 
     def _stop_preview(self):
             self._preview_running = False
+            self._cam_display.configure(fg=TEXT_DARK)
+            self._cam_arrow.configure(fg=TEXT_MUTED)
             if self._preview_after_id:
                 try:
                     self._preview_canvas.after_cancel(self._preview_after_id)
@@ -487,6 +493,22 @@ class CameraPanelMixin:
                 self._preview_cap.release()
                 self._preview_cap = None
 
+            if self._laser is not None:
+                try:
+                    self._laser.off()
+                    time.sleep(0.3)
+                except Exception:
+                    pass
+                try:
+                    self._laser.close()
+                except Exception:
+                    pass
+                self._laser = None
+
+            self._laser_on = False
+
+            self._laser_btn.configure(text="⬤  Laser: OFF", bg=NAVY_2, fg="#9ca3af",
+            state=tk.DISABLED)
             self._preview_toggle_btn.configure(
                 text="▶  Preview OFF",
                 bg="#eef2ff", fg=TECHMI_BLUE
@@ -603,9 +625,9 @@ class CameraPanelMixin:
             if self._laser is None:
                 try:
                     from laser_control import LaserRelay
-                    self._laser = LaserRelay()
+                    self._laser = LaserRelay(port=self._get_laser_port_override())
                     self._laser.open()
-                    self._laser.off()
+                    time.sleep(0.3)
                     self._laser_on = False
                     self._append_log("Laser relay connected.", "blue")
                 except Exception as e:
@@ -879,19 +901,16 @@ class CameraPanelMixin:
     def _save_cam_profile(self):
             profile_name = self.cam_profile.get()
             profile = {
-                "exposure": self.exposure_var.get(),
-                "gain":     self.gain_var.get(),
+                "exposure": int(self.exposure_var.get()),
+                "gain":     int(self.gain_var.get()),
             }
             save_camera_profile(profile_name, profile)
             self._append_log(f"Camera profile '{profile_name}' saved.", "blue")
 
     def _reset_cam_profile(self):
             profile_name = self.cam_profile.get()
-            defaults = get_default_camera_settings()
-            if profile_name in defaults:
-                save_camera_settings(defaults)
-                self._load_camera_profile_into_ui(profile_name)
-                self._apply_cam_settings_to_preview()
-                self._append_log(
-                    f"Camera profile '{profile_name}' reset to defaults.", "blue")
+            self._load_camera_profile_into_ui(profile_name)
+            self._apply_cam_settings_to_preview()
+            self._append_log(
+                f"Camera profile '{profile_name}' reset to saved settings.", "blue")
 

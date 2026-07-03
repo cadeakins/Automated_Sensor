@@ -13,6 +13,8 @@ class ExperimentController :
     def __init__(self):
         self.thread = None # Background experiment thread
         self.stop_event = threading.Event() # Event used to stop experiment
+        self.hardware_error_event = threading.Event() # Event used to stop experiment if hardware error
+        self.hardware_error_message = None
         self.is_running = False
         self.last_error = None # Most recent error message
         self.last_run_folder = None # Folder where most recent run was saved
@@ -38,6 +40,7 @@ class ExperimentController :
             "last_saved_image": None, # Most recently saved image path
             "run_folder": None, # Store current run folder path
             "last_message": "Idle", # Most recent status message
+            "last_message_category": "green", # Log color for last_message
             "alert_message": None, # For specific error handling
             "alert_id" : 0, # For popup handling
             "run_completed_successfully": False # False by default until actually completes correctly
@@ -50,13 +53,19 @@ class ExperimentController :
             camera_index,
             duration_seconds,
             interval_seconds,
-            output_root="current"
+            camera_name=None,
+            output_root="current",
+            continue_with_prev_roi=True,
+            max_consecutive_failures=3,
+            laser_port=None,
     ):
         # Is experiment already running?
         if self.is_running : 
             raise RuntimeError("Experiment is already running")
         
         self.stop_event.clear() # Clear any previous stop request
+        self.hardware_error_event.clear() # Clear any previous hardware error events
+        self.hardware_error_message = None
         self.last_error = None
         self.last_run_folder = None
         self.camera_index = camera_index
@@ -86,11 +95,15 @@ class ExperimentController :
             args=(
             microorganism_type,
             camera_index,
+            camera_name,
             run_id,
             duration_seconds,
             interval_seconds,
-            output_root),
-            daemon = True # Thread closes automatically when main program exits
+            output_root,
+            continue_with_prev_roi,
+            max_consecutive_failures,
+            laser_port),
+            daemon=True  # Thread closes automatically when main program exits
         )
 
         # Mark experiment as running
@@ -104,10 +117,14 @@ class ExperimentController :
         self,
         microorganism_type,
         camera_index,
+        camera_name,
         run_id,
         duration_seconds,
         interval_seconds,
-        output_root
+        output_root,
+        continue_with_prev_roi,
+        max_consecutive_failures,
+        laser_port=None,
 ):
         """
         Runs the experiment in a background thread.
@@ -129,7 +146,7 @@ class ExperimentController :
                 raise RuntimeError("Could not open camera")
 
             # Create the laser relay object.
-            self.laser = LaserRelay()
+            self.laser = LaserRelay(port=laser_port)
 
             # Open the laser relay connection.
             self.laser.open()
@@ -144,7 +161,13 @@ class ExperimentController :
                 interval_seconds=interval_seconds,
                 output_root=output_root,
                 stop_event=self.stop_event,
-                status_callback=self.update_status
+                status_callback=self.update_status,
+                duration_callback=self.get_requested_duration_seconds,
+                continue_with_prev_roi=continue_with_prev_roi,
+                max_consecutive_failures=max_consecutive_failures,
+                end_after_next_capture_event=self.end_after_current_capture_event,
+                hardware_error_event=self.hardware_error_event,
+                hardware_error_message_getter=lambda: self.hardware_error_message,
             )
 
             # Check if the stop button was not requested.
@@ -197,6 +220,8 @@ class ExperimentController :
 
                     # Turn the laser off for safety.
                     self.laser.off()
+                    time.sleep(0.2)
+
 
                 # Ignore laser-off errors during cleanup.
                 except RuntimeError:
@@ -240,6 +265,14 @@ class ExperimentController :
         with self.duration_lock : 
             return self.requested_duration_seconds
         
+    def end_after_next_capture(self):
+        """
+        Signals the experiment to finish cleanly after the next successful capture.
+        """
+        if not self.is_running:
+            return
+        self.end_after_current_capture_event.set()
+
     def adjust_time(self, seconds_delta, minimum_extra_seconds=600) :
         """
         Changes time to the active experiment duration, and does not let time go below 10 minutes
@@ -278,17 +311,6 @@ class ExperimentController :
             last_message=message
         )
 
-
-        # Lock duration while changing
-        with self.duration_lock : 
-            self.requested_duration_seconds += seconds_delta
-            updated_duration  = self.requested_duration_seconds
-
-        # Update GUI status with new duration
-        self.update_status(
-            duration_seconds=updated_duration,
-            last_message=f"Added {seconds_delta // 3600}h to the experiment"
-        )
 
 
 

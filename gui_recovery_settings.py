@@ -10,7 +10,11 @@ All methods in this mixin expect self to be a SensorGUI instance.
 import tkinter as tk
 from tkinter import messagebox
 import time
+import shutil
+import threading
+from datetime import datetime
 from pathlib import Path
+from tkinter import filedialog
 
 from gui_theme import (
     CARD_BG,
@@ -19,6 +23,7 @@ from gui_theme import (
     NAVY,
     OFF_WHITE,
     SUCCESS,
+    DANGER,
     TEXT_DARK,
     TEXT_MUTED,
     format_elapsed,
@@ -32,7 +37,18 @@ from startup_recovery import (
     wipe_folder_contents,
     move_run_to_training,
     build_training_destination,
+    find_last_run_info,
 )
+from camera_tools import camera_can_capture
+from laser_control import LaserRelay
+from config import save_app_settings, load_app_settings, SETTLE_FRAMES
+
+# How often the background health check runs (camera/laser/storage).
+HEALTH_CHECK_INTERVAL_MS = 5000
+# Below this much free space on the data drive, storage is flagged unhealthy.
+MIN_FREE_STORAGE_GB = 5.0
+# Order matters for the "all systems" pill: items checked here decide overall health.
+HEALTH_ITEMS = ["Camera", "Laser Module", "Storage"]
 
 
 class RecoverySettingsMixin:
@@ -64,7 +80,7 @@ class RecoverySettingsMixin:
         stats.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         stats.grid_columnconfigure(0, weight=1)
 
-        # StringVars set by update_status_loop
+        # StringVars set by update_recovery_panel
         self._last_capture_var = tk.StringVar(value="—")
         self._last_run_var     = tk.StringVar(value="—")
         self._total_caps_var   = tk.StringVar(value="—")
@@ -72,7 +88,7 @@ class RecoverySettingsMixin:
         for i, (label, var) in enumerate([
             ("Last Successful Capture", self._last_capture_var),
             ("Last Run",                self._last_run_var),
-            ("Total Captures (All Runs)", self._total_caps_var),
+            ("Total Captures (Last Run)", self._total_caps_var),
         ]):
             _section_label(stats, label).grid(
                 row=i * 2, column=0,
@@ -88,43 +104,240 @@ class RecoverySettingsMixin:
             ).grid(row=i * 2 + 1, column=0, sticky="w")
 
         # ── Right: system health checklist ────────────────────────────────────
-        health = tk.Frame(c, bg="#f0fdf4",
-                          highlightthickness=1,
-                          highlightbackground="#bbf7d0")
-        health.grid(row=0, column=1, sticky="nsew")
-        health.grid_columnconfigure(0, weight=1)
+        # Stored on self so the health-check loop can recolor the whole box.
+        self._health_box = tk.Frame(c, bg="#eef2ff")
+        self._health_box.grid(row=0, column=1, sticky="nsew")
+        self._health_box.grid_columnconfigure(0, weight=1)
 
-        tk.Label(
-            health,
+        self._health_title_lbl = tk.Label(
+            self._health_box,
             text="System Health",
             fg=NAVY,
-            bg="#f0fdf4",
+            bg="#eef2ff",
             font=(FONT_BRAND, 10, "bold")
-        ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
+        )
+        self._health_title_lbl.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
 
-        # Each health item gets a StringVar so it can be updated at runtime
+        # Each health item gets a StringVar (text) and a Label ref (color),
+        # both updated live by the health-check loop.
         self._health_vars = {}
-        for i, item in enumerate(["Camera", "Laser Module", "Storage"]):
-            row_frame = tk.Frame(health, bg="#f0fdf4")
+        self._health_value_labels = {}
+        self._health_row_frames = {}
+        for i, item in enumerate(HEALTH_ITEMS):
+            row_frame = tk.Frame(self._health_box, bg="#eef2ff")
             row_frame.grid(row=i + 1, column=0, sticky="ew",
-                           padx=12, pady=(0, 4 if i < 2 else 10))
+                           padx=12, pady=(0, 4 if i < len(HEALTH_ITEMS) - 1 else 10))
+            self._health_row_frames[item] = row_frame
 
-            v = tk.StringVar(value="✓  Nominal")
+            v = tk.StringVar(value="…  Checking")
             self._health_vars[item] = v
 
             tk.Label(row_frame,
                      text=f"{item}:",
                      fg=TEXT_MUTED,
-                     bg="#f0fdf4",
+                     bg="#eef2ff",
                      font=(FONT_BRAND, 10),
                      width=14,
                      anchor="w").pack(side=tk.LEFT)
 
-            tk.Label(row_frame,
-                     textvariable=v,
-                     fg=SUCCESS,
-                     bg="#f0fdf4",
-                     font=(FONT_BRAND, 10, "bold")).pack(side=tk.LEFT)
+            value_lbl = tk.Label(row_frame,
+                                 textvariable=v,
+                                 fg=TEXT_MUTED,
+                                 bg="#eef2ff",
+                                 font=(FONT_BRAND, 10, "bold"))
+            value_lbl.pack(side=tk.LEFT)
+            self._health_value_labels[item] = value_lbl
+
+        # Health-state cache: None = unknown/checking, True/False once known.
+        self._health_state = {item: None for item in HEALTH_ITEMS}
+
+    # ── System health checks ──────────────────────────────────────────────────
+    def _init_health_system(self):
+        """
+        Call once after the UI is built. Starts the recurring background
+        health check (camera / laser / storage) and the recovery panel's
+        first disk scan.
+        """
+        self._recovery_dirty = True
+        self._prev_is_running = False
+        self._run_health_check()
+        self.update_recovery_panel()
+
+    def _run_health_check(self):
+        """
+        Checks laser presence and free storage synchronously (cheap, no
+        device I/O beyond listing serial ports / statvfs). Camera presence
+        is checked in a background thread since opening a capture device
+        can briefly block.
+
+        Skips actually opening the camera if the preview or an experiment
+        is already using it — in that case frames are clearly flowing, so
+        the camera is healthy by definition and we avoid grabbing a second
+        handle on the same device.
+        """
+
+        # ── Storage ──────────────────────────────────────────────────────────
+        try:
+            free_gb = shutil.disk_usage(self.current_folder).free / (1024 ** 3)
+            storage_ok = free_gb >= MIN_FREE_STORAGE_GB
+        except Exception:
+            storage_ok = False
+        self._apply_health_result("Storage", storage_ok)
+
+        # ── Laser ────────────────────────────────────────────────────────────
+        try:
+            laser_ok = LaserRelay().find_port() is not None
+        except Exception:
+            laser_ok = False
+        self._apply_health_result("Laser Module", laser_ok)
+
+        # ── Camera ───────────────────────────────────────────────────────────
+        if self._preview_running or self.controller.is_running:
+            self._apply_health_result("Camera", True)
+        else:
+            try:
+                cam_idx = self.get_selected_camera_index()
+            except RuntimeError:
+                self._apply_health_result("Camera", False)
+            else:
+                threading.Thread(
+                    target=self._camera_health_worker,
+                    args=(cam_idx,),
+                    daemon=True
+                ).start()
+
+        # Reschedule.
+        self.root.after(HEALTH_CHECK_INTERVAL_MS, self._run_health_check)
+
+    def _camera_health_worker(self, cam_idx):
+        """
+        Runs on a background thread: briefly opens the camera to confirm
+        it produces a frame, then hands the result back to the GUI thread.
+        """
+        try:
+            ok = camera_can_capture(cam_idx)
+        except Exception:
+            ok = False
+        self.root.after(0, lambda: self._apply_health_result("Camera", ok))
+
+    def _apply_health_result(self, item, ok: bool):
+        """
+        Updates one health-checklist row and refreshes the overall
+        system-ready indicators (topbar pill + sidebar card).
+
+        If system health is critical and an experiment is running, 
+        signals are sent to stop experiment as soon as error is detected. 
+        """
+        prev_state = self._health_state.get(item)
+        self._health_state[item] = ok
+        var = self._health_vars.get(item)
+        lbl = self._health_value_labels.get(item)
+        if var is None or lbl is None:
+            return
+
+        if ok:
+            var.set("✓  Nominal")
+            lbl.configure(fg=SUCCESS)
+        else:
+            var.set("✕  Unavailable")
+            lbl.configure(fg=DANGER)
+
+        self._refresh_overall_health_indicator()
+
+        # Signal running experiment if a critical device just failed
+        if not ok and prev_state is True and self.controller.is_running : 
+            self.controller.hardware_error_message = f"{item} disconnected during experiment"
+            self.controller.hardware_error_event.set()
+
+    def _refresh_overall_health_indicator(self):
+        """
+        Updates the topbar pill and the sidebar "All Systems" card based
+        on the combined health-check state. Only shows green if every
+        checked item is confirmed healthy.
+        """
+        states = list(self._health_state.values())
+        all_ok = all(states) and None not in states
+
+        if all_ok:
+            pill_text, pill_fg, pill_bg = "⬤  System Ready", "#d1fae5", "#0d2e1a"
+            title_fg, status_fg, status_text = "#bbf7d0", "#6ee7b7", "   Nominal"
+        else:
+            pill_text, pill_fg, pill_bg = "⬤  Attention Needed", "#fee2e2", "#3a0d0d"
+            title_fg, status_fg, status_text = "#fecaca", "#fca5a5", "   Issue Detected"
+
+        try:
+            self.system_ready_lbl.configure(text=pill_text, fg=pill_fg, bg=pill_bg)
+        except Exception:
+            pass
+
+        try:
+            self._sidebar_health_title_lbl.configure(fg=title_fg)
+            self._sidebar_health_status_lbl.configure(fg=status_fg, text=status_text)
+        except Exception:
+            pass
+
+    # ── Recovery / Summary live updates ───────────────────────────────────────
+    def _format_capture_timestamp(self, ts: float) -> str:
+        """
+        Formats a unix timestamp as 'Today, HH:MM' or 'Mon DD, HH:MM'.
+        """
+        if ts is None:
+            return "—"
+        dt = datetime.fromtimestamp(ts)
+        now = datetime.now()
+        if dt.date() == now.date():
+            return f"Today, {dt.strftime('%H:%M')}"
+        return dt.strftime("%b %d, %H:%M")
+
+    def update_recovery_panel(self):
+        """
+        Keeps the Recovery / Summary stats current.
+
+        While a run is active, this reads live numbers straight out of the
+        controller's status dict (cheap, no disk access) so the panel
+        updates every poll tick. While idle, it only rescans disk when
+        something has actually changed (self._recovery_dirty), since
+        walking run folders is comparatively expensive.
+        """
+
+        if self.controller.is_running:
+            self._prev_is_running = True
+            st = self.controller.get_status()
+            run_folder = st.get("run_folder")
+            captures = st.get("capture_count", 0)
+            last_img = st.get("last_saved_image")
+
+            if run_folder:
+                self._last_run_var.set(f"{self.organism.get()} / {Path(run_folder).name}")
+            self._total_caps_var.set(str(captures))
+            if last_img:
+                self._last_capture_var.set(self._format_capture_timestamp(time.time()))
+            return
+
+        # Just transitioned from running -> idle: the run that finished
+        # (whether completed, stopped, or errored) is now "the last run".
+        if self._prev_is_running:
+            self._recovery_dirty = True
+            self._prev_is_running = False
+
+        if not self._recovery_dirty:
+            return
+        self._recovery_dirty = False
+
+        info = find_last_run_info(
+            current_folder=self.current_folder,
+            training_folder=self.training_folder
+        )
+
+        if info is None:
+            self._last_run_var.set("—")
+            self._total_caps_var.set("—")
+            self._last_capture_var.set("—")
+            return
+
+        self._last_run_var.set(info["run_name"])
+        self._total_caps_var.set(str(info["capture_count"]))
+        self._last_capture_var.set(self._format_capture_timestamp(info["last_capture_ts"]))
 
     # ── Settings popup ────────────────────────────────────────────────────────
     def _open_settings_window(self):
@@ -134,7 +347,7 @@ class RecoverySettingsMixin:
 
         win = tk.Toplevel(self.root)
         win.title("Settings")
-        win.geometry("440x340")
+        win.geometry("800x600")
         win.configure(bg=OFF_WHITE)
         win.resizable(False, False)
         win.grab_set()
@@ -145,60 +358,81 @@ class RecoverySettingsMixin:
                  bg=OFF_WHITE,
                  font=(FONT_BRAND, 15, "bold")).pack(pady=(18, 14))
 
-        # ── Laser COM port ────────────────────────────────────────────────────
+        # ── Laser device selector ────────────────────────────────────────────────────
+        import serial.tools.list_ports as stlp
+
         fr = tk.Frame(win, bg=OFF_WHITE)
         fr.pack(fill=tk.X, padx=28, pady=6)
+        
         tk.Label(fr,
-                 text="Laser COM Port:",
+                 text="Laser Relay Device:",
                  fg=TEXT_DARK,
                  bg=OFF_WHITE,
                  font=(FONT_BRAND, 11),
                  width=20,
                  anchor="w").pack(side=tk.LEFT)
 
-        # Keep a StringVar so the value can be read back on save
-        if not hasattr(self, "_laser_port_var"):
-            self._laser_port_var = tk.StringVar(value="COM5")
+        if not hasattr(self, "_laser_port_var") : 
+            self._laser_port_var = tk.StringVar(value="Auto-detect")
 
-        tk.Entry(fr,
-                 textvariable=self._laser_port_var,
-                 width=10,
-                 font=(FONT_BRAND, 11),
-                 relief="flat",
-                 bd=1,
-                 bg="white",
-                 fg=TEXT_DARK,
-                 highlightthickness=1,
-                 highlightbackground=CARD_BORDER).pack(side=tk.LEFT)
+        def _get_port_options() :
+            try:  
+                ports = stlp.comports()
+                options = ["Auto-detect"]
+                for p in sorted(ports, key=lambda x: x.device) : 
+                    options.append(f"{p.device} - {p.description}")
+                if ports == None : 
+                    return ["Auto-detect"]
+                return options
+            except Exception : 
+                return ["Auto-detect"]
+            
+            
+            
+        port_options = _get_port_options()
 
-        # ── Manual camera index override ──────────────────────────────────────
-        fr2 = tk.Frame(win, bg=OFF_WHITE)
-        fr2.pack(fill=tk.X, padx=28, pady=6)
-        tk.Label(fr2,
-                 text="Force Camera Index:",
+        laser_menu = tk.OptionMenu(fr, self._laser_port_var, *port_options)
+        laser_menu.configure(
+            font=(FONT_BRAND, 10),
+            bg="white",
+            fg=TEXT_DARK,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=CARD_BORDER,
+            width=28
+        )
+        laser_menu.pack(side=tk.LEFT, padx=(0,0))
+
+        def _refresh_ports() :
+            menu = laser_menu["menu"]
+            menu.delete(0, "end")
+            for opt in _get_port_options() :
+                menu.add_command(label=opt, command=lambda value=opt: self._laser_port_var.set(value))
+
+        _btn(fr, "↻", _refresh_ports, "primary").pack(side=tk.LEFT)
+
+        # ── Identify Cameras ──────────────────────────────────────────────────
+        fr_id = tk.Frame(win, bg=OFF_WHITE)
+        fr_id.pack(fill=tk.X, padx=28, pady=6)
+
+        tk.Label(fr_id,
+                 text="Camera Labels:",
                  fg=TEXT_DARK,
                  bg=OFF_WHITE,
                  font=(FONT_BRAND, 11),
                  width=20,
                  anchor="w").pack(side=tk.LEFT)
 
-        if not hasattr(self, "_force_cam_var"):
-            self._force_cam_var = tk.StringVar(value="")
+        _btn(fr_id, "Identify Cameras…",
+             lambda: self._open_identify_cameras_window(win),
+             "secondary").pack(side=tk.LEFT)
 
-        tk.Entry(fr2,
-                 textvariable=self._force_cam_var,
-                 width=6,
-                 font=(FONT_BRAND, 11),
-                 relief="flat",
-                 bd=1,
-                 bg="white",
-                 fg=TEXT_DARK,
-                 highlightthickness=1,
-                 highlightbackground=CARD_BORDER).pack(side=tk.LEFT)
+
 
         # ── Data root (read-only display) ─────────────────────────────────────
         fr3 = tk.Frame(win, bg=OFF_WHITE)
         fr3.pack(fill=tk.X, padx=28, pady=6)
+
         tk.Label(fr3,
                  text="Data Root:",
                  fg=TEXT_DARK,
@@ -207,16 +441,124 @@ class RecoverySettingsMixin:
                  width=20,
                  anchor="w").pack(side=tk.LEFT)
 
+        if not hasattr(self, "_data_root_var") : 
+            self._data_root_var = tk.StringVar(value=str(self.current_folder.parent))
+
         tk.Label(fr3,
-                 text=str(self.current_folder.parent),
+                 textvariable=self._data_root_var,
                  fg=TEXT_MUTED,
                  bg=OFF_WHITE,
                  font=(FONT_BRAND, 10),
-                 wraplength=260,
-                 anchor="w").pack(side=tk.LEFT)
+                 wraplength=500,
+                 anchor="w",
+                 justify="left").pack(side=tk.LEFT)
+        
+        def _browse() : 
+            chosen = filedialog.askdirectory(title="Select Data Root Folder", initialdir=self._data_root_var.get())
+            if chosen : 
+                self._data_root_var.set(chosen)
+
+        browse_btn = _btn(fr3, "Browse", _browse, "primary")
+        browse_btn.pack(side=tk.LEFT, padx=(24,0))
+
+        if self.controller.is_running :
+            browse_btn.configure(state="disabled")
+            tk.Label(fr3,
+                     text="(stop experiment to change)",
+                     fg=TEXT_MUTED,
+                     bg=OFF_WHITE,
+                     font=(FONT_BRAND, 9)).pack(side=tk.LEFT, padx=(4,0))
+
+        # ── ArUco Error Handling ──────────────────────────────────────────────
+                # ── ArUco Error Handling ──────────────────────────────────────────────
+        tk.Frame(win, bg=CARD_BORDER, height=1).pack(fill=tk.X, padx=28, pady=(12, 8))
+
+        tk.Label(win,
+                 text="ArUco Error Handling",
+                 fg=NAVY,
+                 bg=OFF_WHITE,
+                 font=(FONT_BRAND, 11, "bold")).pack(anchor="w", padx=28)
+
+        # Initialize vars the first time the window is opened.
+        if not hasattr(self, "_continue_with_prev_roi_var"):
+            self._continue_with_prev_roi_var = tk.BooleanVar(value=True)
+        if not hasattr(self, "_max_aruco_failures_var"):
+            self._max_aruco_failures_var = tk.StringVar(value="3")
+
+        # Checkbox: continue using previous ROI (on by default).
+        chk_frame = tk.Frame(win, bg=OFF_WHITE)
+        chk_frame.pack(fill=tk.X, padx=28, pady=(6, 2))
+
+        chk = tk.Checkbutton(
+            chk_frame,
+            text="Continue using previous ROI when markers disappear",
+            variable=self._continue_with_prev_roi_var,
+            bg=OFF_WHITE,
+            fg=TEXT_DARK,
+            font=(FONT_BRAND, 11),
+            activebackground=OFF_WHITE,
+            command=lambda: _toggle_aruco_dropdown()
+        )
+        chk.pack(side=tk.LEFT)
+
+        # Indented row for the consecutive-failures dropdown.
+        fail_frame = tk.Frame(win, bg=OFF_WHITE)
+        fail_frame.pack(fill=tk.X, padx=52, pady=(0, 4))  # extra left indent
+
+        tk.Label(fail_frame,
+                 text="Stop after consecutive capture failures:",
+                 fg=TEXT_MUTED,
+                 bg=OFF_WHITE,
+                 font=(FONT_BRAND, 10)).pack(side=tk.LEFT, padx=(0, 8))
+
+        failure_dropdown = tk.OptionMenu(
+            fail_frame,
+            self._max_aruco_failures_var,
+            "1", "2", "3", "5", "10"
+        )
+        failure_dropdown.configure(
+            font=(FONT_BRAND, 10),
+            bg="white",
+            fg=TEXT_DARK,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=CARD_BORDER
+        )
+        failure_dropdown.pack(side=tk.LEFT)
+
+        def _toggle_aruco_dropdown():
+            # Dropdown is only usable when the checkbox is OFF.
+            state = "disabled" if self._continue_with_prev_roi_var.get() else "normal"
+            failure_dropdown.configure(state=state)
+            for child in fail_frame.winfo_children():
+                try:
+                    child.configure(state=state)
+                except tk.TclError:
+                    pass
+
+        # Set initial dropdown state to match the checkbox default.
+        _toggle_aruco_dropdown()
+
+
 
         # ── Divider + action buttons ──────────────────────────────────────────
         tk.Frame(win, bg=CARD_BORDER, height=1).pack(fill=tk.X, padx=28, pady=16)
+
+        if self.controller.is_running:
+            tk.Label(win,
+                    text="⚠  Settings locked while experiment is running.",
+                    fg=DANGER,
+                    bg=OFF_WHITE,
+                    font=(FONT_BRAND, 9, "bold")).pack(pady=(0, 8))
+            
+            def _disable_all(parent) :
+                for child in parent.winfo_children() : 
+                    try :
+                        child.configure(state="disabled")
+                    except tk.TclError : 
+                        pass
+                    _disable_all(child)
+            _disable_all(win)
 
         btn_row = tk.Frame(win, bg=OFF_WHITE)
         btn_row.pack(padx=28)
@@ -228,10 +570,150 @@ class RecoverySettingsMixin:
              win.destroy,
              "secondary").pack(side=tk.LEFT)
 
+    
+    def _get_laser_port_override(self): 
+        """
+        Returns the raw COM port string from the settings dropdown,
+        or None if "Auto-detect" is selected.
+        """
+        val = getattr(self, "_laser_port_var", None)
+        if val is None : 
+            return None
+        
+        raw = val.get()
+        if raw == "Auto-detect" or not raw : 
+            return None
+        # Value is formatted as "COM3 - Description", extract just the port
+        return raw.split(" - ")[0].strip()
+
+    def _open_identify_cameras_window(self, parent_win):
+        """
+        Opens a window showing a captured frame from each camera index
+        so the user can identify and rename them.
+        """
+        import cv2 as cv
+        from PIL import Image, ImageTk
+
+        iwin = tk.Toplevel(parent_win)
+        iwin.title("Identify Cameras")
+        iwin.configure(bg=OFF_WHITE)
+        iwin.grab_set()
+
+        tk.Label(iwin,
+                 text="Loading camera previews…",
+                 fg=TEXT_MUTED,
+                 bg=OFF_WHITE,
+                 font=(FONT_BRAND, 10)).pack(pady=20, padx=20)
+
+        iwin.update()
+
+        # Grab one frame from each working camera
+        cameras = self.available_cameras
+        frames = {}
+        for cam in cameras:
+            idx = cam["index"]
+            cap = cv.VideoCapture(idx, cv.CAP_MSMF)
+            if cap.isOpened():
+                for _ in range(SETTLE_FRAMES):
+                    cap.read()
+                ok, frame = cap.read()
+                if ok and frame is not None:
+                    frames[idx] = frame
+
+            cap.release()
+
+        # Clear loading label
+        for w in iwin.winfo_children():
+            w.destroy()
+
+        if not frames:
+            tk.Label(iwin,
+                     text="No cameras could be opened.",
+                     fg=DANGER,
+                     bg=OFF_WHITE,
+                     font=(FONT_BRAND, 10)).pack(pady=20, padx=20)
+            _btn(iwin, "Close", iwin.destroy, "secondary").pack(pady=8)
+            return
+
+        tk.Label(iwin,
+                 text="Identify your cameras by the preview below.",
+                 fg=TEXT_MUTED,
+                 bg=OFF_WHITE,
+                 font=(FONT_BRAND, 9)).pack(pady=(12, 4), padx=20)
+
+        frame_row = tk.Frame(iwin, bg=OFF_WHITE)
+        frame_row.pack(padx=20, pady=8)
+
+        THUMB_W, THUMB_H = 320, 200
+        self._camera_preview_images = []
+
+        for col, cam in enumerate(cameras):
+            idx = cam["index"]
+            col_frame = tk.Frame(frame_row, bg=OFF_WHITE)
+            col_frame.grid(row=0, column=col, padx=12)
+
+            if idx in frames:
+                img = frames[idx]
+                h, w = img.shape[:2]
+                scale = min(THUMB_W / w, THUMB_H / h)
+                nw, nh = int(w * scale), int(h * scale)
+                resized = cv.resize(img, (nw, nh))
+                rgb = cv.cvtColor(resized, cv.COLOR_BGR2RGB)
+                pil = Image.fromarray(rgb)
+                tkimg = ImageTk.PhotoImage(pil)
+                self._camera_preview_images.append(tkimg)
+                tk.Label(col_frame, image=tkimg, bg="#000000").pack()
+            else:
+                tk.Label(col_frame,
+                         text="Could not\ncapture frame",
+                         bg="#1a1a2e", fg=TEXT_MUTED,
+                         width=30, height=8,
+                         font=(FONT_BRAND, 9)).pack()
+
+            tk.Label(col_frame,
+                     text=f"Index {idx}",
+                     fg=TEXT_MUTED,
+                     bg=OFF_WHITE,
+                     font=(FONT_BRAND, 8)).pack(pady=(4, 2))
+
+            tk.Label(col_frame,
+                     text=cam["name"],
+                     font=(FONT_BRAND, 10),
+                     bg=OFF_WHITE,
+                     fg=TEXT_DARK).pack()
+
+        btn_row = tk.Frame(iwin, bg=OFF_WHITE)
+        btn_row.pack(pady=12)
+        _btn(btn_row, "Close", iwin.destroy, "secondary").pack()
+    
+
     def _save_settings(self, win):
         """
         Saves settings and closes the Settings window.
         """
+        
+        if not self.controller.is_running : 
+            new_root = getattr(self, "_data_root_var", None)
+            if new_root:
+                current_root = str(self.current_folder.parent)
+                new_root_str = new_root.get()
+                if new_root.get() != current_root: 
+                    settings = load_app_settings()
+                    settings["data_root"] = new_root.get()
+                    save_app_settings(settings)
+                    
+                    # Hot swap live paths, should ONLY be done in idle state
+                    from pathlib import Path
+                    self.current_folder=  Path(new_root_str) / "current"
+                    self.training_folder = Path(new_root_str) / "training"
+                    self.current_folder.mkdir(parents=True, exist_ok=True)
+                    self.training_folder.mkdir(parents=True, exist_ok=True)
+
+                    # Force recovery panel to rescan against new location
+                    self._recovery_dirty = True
+
+                    self._append_log(f"Data root changed to {new_root_str}.", "gray")
+
         # LaserRelay will use the COM port on next open call
         win.destroy()
         self._append_log("Settings saved.", "gray")

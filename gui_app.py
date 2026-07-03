@@ -51,12 +51,14 @@ class SensorGUI(
             self.training_folder = training_folder
             self.current_folder.mkdir(parents=True, exist_ok=True)
             self.training_folder.mkdir(parents=True, exist_ok=True)
+            self._active_log_path = None
 
             # ── StringVars ────────────────────────────────────────────────────────
             self.organism        = tk.StringVar()
             self.selected_camera = tk.StringVar()
             self.available_cameras       = []
             self.camera_label_to_index   = {}
+            self.camera_label_to_name    = {}
 
             self.duration_days    = tk.StringVar(value="0")
             self.duration_hours   = tk.StringVar(value="0")
@@ -108,6 +110,8 @@ class SensorGUI(
             # Live adjustment buttons list for enable/disable
             self._run_adjust_btns = []
             self._idle_only_widgets = []
+            self._end_after_next_requested = False
+            self._status_loop_active = False  # Guard against reentrant update_status_loop
 
             # ttk style for progress bar
             self._style = ttk.Style()
@@ -125,6 +129,7 @@ class SensorGUI(
             self._build_ui()
             self.update_timing_estimates()
             self._load_camera_profile_into_ui("normal")
+            self._init_health_system()
             self.update_status_loop()
             self.root.protocol("WM_DELETE_WINDOW", self.confirm_exit)
 

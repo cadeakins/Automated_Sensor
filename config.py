@@ -1,7 +1,35 @@
 from pathlib import Path
+import json
 ARUCO_DICTIONARY = 0  # replace with cv.aruco.DICT_4X4_50 in code
 REQUIRED_MARKER_IDS = {0, 1, 2, 3}
 SETTLE_FRAMES = 10
-DATA_ROOT = Path(r"C:\Users\cadem\STEM\Internship Practice\OpenCV\Sensor\local")
-CURRENT_FOLDER = DATA_ROOT / "current"
+
+_SETTINGS_FILE = Path(__file__).parent / "app_settings.json"
+_DEFAULT_DATA_ROOT = Path(r"C:\Users\cadem\STEM\Internship Practice\OpenCV\Sensor\local")
+
+def load_app_settings() : 
+    """
+    Loads application settings from JSON file
+    """
+    if not _SETTINGS_FILE.exists() :
+        return {"data_root": str(_DEFAULT_DATA_ROOT)}
+    try :
+        with open(_SETTINGS_FILE, "r", encoding="utf-8") as file : 
+            return json.load(file)
+        
+    except Exception: 
+        return {"data_root": _DEFAULT_DATA_ROOT}
+    
+def save_app_settings(settings) : 
+    """
+    Saves application settings to JSON file
+    """
+    with open(_SETTINGS_FILE, "w", encoding="utf-8") as file :
+        json.dump(settings, file, indent=4)
+
+
+# Loaded by rest of app
+
+DATA_ROOT = Path(load_app_settings()["data_root"])
+CURRENT_FOLDER = DATA_ROOT / "current" 
 TRAINING_FOLDER = DATA_ROOT / "training"

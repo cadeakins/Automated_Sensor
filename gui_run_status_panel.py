@@ -20,6 +20,7 @@ Row assignments (right column):
 import tkinter as tk
 from tkinter import ttk
 import time
+from pathlib import Path
 
 from gui_theme import (
     CARD_BG,
@@ -31,6 +32,7 @@ from gui_theme import (
     TECHMI_BLUE,
     TEXT_DARK,
     TEXT_MUTED,
+    WARNING,
     _btn,
     _card,
     _section_label,
@@ -71,10 +73,10 @@ class RunStatusLogMixin:
         _section_label(c, "Live Run Adjustments").grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(0, 2))
 
-        # Adjustment buttons: +1h, +6h, −1h
+        # Adjustment buttons: +1h, +6h, -1h, End After Next
         adj_frame = tk.Frame(c, bg=CARD_BG)
         adj_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0,2))
-        adj_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        adj_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         for i, (label, delta) in enumerate([
             ("+1h",  3600),
@@ -82,7 +84,7 @@ class RunStatusLogMixin:
             ("-1h", -3600),
         ]):
             btn_border = tk.Frame(adj_frame, bg=CARD_BORDER, padx=1, pady=1)
-            
+
             btn_border.grid(
                 row=0,
                 column=i,
@@ -104,12 +106,33 @@ class RunStatusLogMixin:
                 font=(FONT_BRAND, 9),
                 padx=6,
                 pady=2,
-                command=lambda d=delta: self.controller.adjust_time(d)
+                command=lambda d=delta: self.controller.adjust_time(d) 
             )
 
             b.pack(fill=tk.BOTH, expand=True)
 
             self._run_adjust_btns.append(b)
+
+        # End After Next Capture button (column 3, same row as time adjustments)
+        end_border = tk.Frame(adj_frame, bg=CARD_BORDER, padx=1, pady=1)
+        end_border.grid(row=0, column=3, sticky="ew", padx=2, pady=1)
+
+        self._end_after_next_btn = tk.Button(
+            end_border,
+            text="End After Next",
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+            bg=CARD_BG,
+            fg=WARNING,
+            activebackground=WARNING,
+            activeforeground="white",
+            font=(FONT_BRAND, 9),
+            padx=6,
+            pady=2,
+            command=self._request_end_after_next
+        )
+        self._end_after_next_btn.pack(fill=tk.BOTH, expand=True)
 
     # ── Live Status panel ─────────────────────────────────────────────────────
     def _build_live_status_panel(self, parent, row=0):
@@ -213,6 +236,7 @@ class RunStatusLogMixin:
                 padx=(8, 12),
                 pady=(0, 0)
             )
+            
         # ── Capture count row ──────────────────────────────────────────────────
         capture_row = tk.Frame(c, bg=CARD_BG)
         capture_row.grid(row=1, column=1, sticky="ew", pady=(8, 2))
@@ -256,27 +280,28 @@ class RunStatusLogMixin:
         )
         bottom_msg.grid_columnconfigure(0, weight=1)
 
-        # Last controller message.
-        tk.Label(
+        # Single status line: shows error in red when one is active,
+        # otherwise shows the last controller message in muted text.
+        self._status_label = tk.Label(
             bottom_msg,
             textvariable=self.last_msg_var,
             fg=TEXT_MUTED,
             bg=CARD_BG,
             font=(FONT_BRAND, 8),
             anchor="w",
-            wraplength=700
-        ).grid(row=0, column=0, sticky="ew")
+            wraplength=700,
+            justify="left"
+        )
+        self._status_label.grid(row=0, column=0, sticky="ew")
 
-        # Error message, normally just "—".
-        tk.Label(
-            bottom_msg,
-            textvariable=self.error_var,
-            fg=DANGER,
-            bg=CARD_BG,
-            font=(FONT_BRAND, 8),
-            anchor="w",
-            wraplength=700
-        ).grid(row=1, column=0, sticky="ew", pady=(1, 0))
+        def _on_error_change(*_):
+            err = self.error_var.get()
+            if err and err not in ("—", "-"):
+                self._status_label.configure(textvariable=self.error_var, fg=DANGER)
+            else:
+                self._status_label.configure(textvariable=self.last_msg_var, fg=TEXT_MUTED)
+
+        self.error_var.trace_add("write", _on_error_change)
     # ── Donut renderer ────────────────────────────────────────────────────────
     def _draw_donut(self, pct: float):
         """
@@ -298,10 +323,11 @@ class RunStatusLogMixin:
                       width=arc_width,
                       style="arc")
 
-        # Progress arc (clockwise from top, TECHMI blue)
-        if pct >= 0.25 :
-                extent = -pct * 3.6
-        else :
+        # Progress arc (clockwise from top, TECHMI blue).
+        # Cap at 99.9 % to avoid extent = -360, which Tkinter renders as empty.
+        if pct >= 0.25:
+            extent = -min(pct, 99.9) * 3.6
+        else:
             extent = 0
 
         if extent != 0:
@@ -312,7 +338,7 @@ class RunStatusLogMixin:
                         style="arc")
 
         # Percentage text in the centre
-        cv.create_text(cx, cy - 7,
+        cv.create_text(cx, cy - 2,
                     text=f"{int(pct)}%",
                     fill=TEXT_DARK,
                     font=(FONT_BRAND, 11, "bold"))
@@ -361,12 +387,13 @@ class RunStatusLogMixin:
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.configure(command=self.log_text.yview)
 
-        # ── Colour tag definitions ────────────────────────────────────────────
-        self.log_text.tag_configure("gray",  foreground="#6b7280")
-        self.log_text.tag_configure("blue",  foreground="#2563eb")
-        self.log_text.tag_configure("green", foreground=SUCCESS)
-        self.log_text.tag_configure("red",   foreground=DANGER)
-        self.log_text.tag_configure("time",  foreground=TEXT_MUTED)
+        # ── Color tag definitions ────────────────────────────────────────────
+        self.log_text.tag_configure("gray",   foreground="#6b7280")
+        self.log_text.tag_configure("blue",   foreground="#2563eb")
+        self.log_text.tag_configure("green",  foreground=SUCCESS)
+        self.log_text.tag_configure("red",    foreground=DANGER)
+        self.log_text.tag_configure("yellow", foreground="#cda30b")
+        self.log_text.tag_configure("time",   foreground=TEXT_MUTED)
 
         # First log entry
         self._append_log("System started.", "gray")
@@ -380,6 +407,8 @@ class RunStatusLogMixin:
         message  : str   Text to display.
         category : str   One of 'gray', 'blue', 'green', 'red'.
                          Controls both the dot colour and the text colour.
+
+        Will incrementally write logs to a file in the current/ folder as experiment runs
         """
 
         timestamp = time.strftime("%H:%M:%S")
@@ -391,3 +420,13 @@ class RunStatusLogMixin:
         self.log_text.insert("end", f"{message}\n", category)
         self.log_text.configure(state="disabled")
         self.log_text.see("end")
+
+        # Write to run log if experiment is active
+        if self._active_log_path is not None : 
+            try:
+                log_path = self._active_log_path
+                with open(log_path, "a", encoding="utf-8") as f: 
+                    full_ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                    f.write(f"[{full_ts}][{category.upper()}] {message}\n")
+            except Exception :
+                pass

@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 from PIL import Image, ImageTk
 
-from gui_theme import format_elapsed
+from gui_theme import format_elapsed, WARNING
 from organism_menu import get_organism_options
 from camera_tools import scan_available_cameras
 from startup_recovery import (
@@ -47,12 +47,20 @@ class BackendActionsMixin:
             pass
 
     def load_available_cameras(self):
-            self.available_cameras    = scan_available_cameras()
-            self.camera_label_to_index = {}
-            for cam in self.available_cameras:
-                self.camera_label_to_index[cam["label"]] = cam["index"]
-
-    def refresh_camera_menu_on_open(self):
+        """
+        Loads available cameras and names
+        """
+        from config import load_app_settings
+        settings = load_app_settings()
+        self.available_cameras = scan_available_cameras()
+        self.camera_label_to_index = {}
+        self.camera_label_to_name  = {}
+        for cam in self.available_cameras:
+            self.camera_label_to_index[cam["label"]] = cam["index"]
+            self.camera_label_to_name[cam["label"]]  = cam.get("name")
+    
+    
+    def refresh_camera_menu(self):
             if self.controller.is_running:
                 return
             prev = self.selected_camera.get()
@@ -70,6 +78,10 @@ class BackendActionsMixin:
                 raise RuntimeError("No valid camera selected.")
             return self.camera_label_to_index[label]
 
+    def get_selected_camera_name(self):
+            label = self.selected_camera.get()
+            return self.camera_label_to_name.get(label)
+
     def start_experiment(self):
             organism = self.organism.get().strip()
             if not organism:
@@ -77,7 +89,12 @@ class BackendActionsMixin:
                 return
 
             try:
+                # Clear any error from previous experiment 
+                self.controller.last_error = None
+                self.error_var.set("-")
+
                 cam_idx  = self.get_selected_camera_index()
+                cam_name = self.get_selected_camera_name()
                 duration = self.get_duration_seconds_from_inputs()
                 interval = self.get_interval_seconds_from_inputs()
                 if interval > duration:
@@ -89,12 +106,25 @@ class BackendActionsMixin:
                 return
 
             try:
+                # Release preview camera and laser relay so the experiment can open them
+                if self._preview_running or self._laser is not None:
+                    self._stop_preview()
+
+                # Read ArUco recovery settings (defaults used if never opened Settings).
+                continue_roi = getattr(self, "_continue_with_prev_roi_var",
+                                       None)
+                max_fails    = getattr(self, "_max_aruco_failures_var", None)
+
                 run_id = self.controller.start_experiment(
                     microorganism_type=organism,
                     camera_index=cam_idx,
+                    camera_name=cam_name,
                     duration_seconds=duration,
                     interval_seconds=interval,
-                    output_root=self.current_folder
+                    output_root=self.current_folder,
+                    continue_with_prev_roi=continue_roi.get() if continue_roi else True,
+                    max_consecutive_failures=int(max_fails.get()) if max_fails else 3,
+                    laser_port=self._get_laser_port_override(),
                 )
                 self.run_id_var.set(str(run_id))
                 self.status.set("Running")
@@ -106,6 +136,14 @@ class BackendActionsMixin:
                     f"Experiment started. Run ID: {run_id}.", "gray")
             except RuntimeError as e:
                 messagebox.showerror("Error", str(e))
+
+    def _request_end_after_next(self):
+            if not self.controller.is_running:
+                return
+            self.controller.end_after_next_capture()
+            self._end_after_next_requested = True
+            self._end_after_next_btn.configure(text="✓ Queued", state="disabled")
+            self._append_log("Experiment will end after next capture.", "yellow")
 
     def stop_experiment(self):
             if not self.controller.is_running:
@@ -137,11 +175,35 @@ class BackendActionsMixin:
             if self._laser:
                 try:
                     self._laser.off()
+                    time.sleep(0.2)
                     self._laser.close()
+                    
                 except Exception:
                     pass
 
     def update_status_loop(self):
+            # Prevent reentrant calls spawned by Tkinter's modal-dialog nested event
+            # loop (e.g. messagebox.showwarning).  Without this guard, every 200 ms
+            # tick that fires while a popup is open spawns a new parallel loop, and
+            # after a few seconds the canvas is being redrawn hundreds of times per
+            # second, flooding the event queue and freezing the display.
+            try: 
+                if self._status_loop_active:
+                    self.root.after(200, self.update_status_loop)
+                    return
+                self._status_loop_active = True
+                try:
+                    self._update_status_loop_body()
+                finally:
+                    self._status_loop_active = False
+
+            except Exception as e: 
+                print(f"Update status error: {e}")
+
+            finally:
+                self.root.after(200, self.update_status_loop)
+
+    def _update_status_loop_body(self):
             st = self.controller.get_status()
             elapsed   = st.get("elapsed_seconds",         0.0)
             duration  = st.get("duration_seconds",         0.0)
@@ -149,7 +211,11 @@ class BackendActionsMixin:
             run_folder= st.get("run_folder",               None)
             last_img  = st.get("last_saved_image",         None)
             last_msg  = st.get("last_message",             "Idle")
+            last_msg_category = st.get("last_message_category", "green")
             run_ok    = st.get("run_completed_successfully", False)
+
+            if run_folder and run_folder != "-" :
+                 self._active_log_path = Path(run_folder) / "run.log"
 
             alert_msg = st.get("alert_message", None)
             alert_id  = st.get("alert_id",      0)
@@ -161,13 +227,14 @@ class BackendActionsMixin:
                 self.alert_popup_open   = True
                 try:
                     messagebox.showwarning("Capture Warning", alert_msg)
-                    self._append_log(f"Warning: {alert_msg}", "red")
                 finally:
                     self.alert_popup_open = False
 
             if self.controller.last_error:
-                self.error_var.set(self.controller.last_error)
-                self._append_log(f"Error: {self.controller.last_error}", "red")
+                err = self.controller.last_error
+                self.error_var.set(err)
+                self._append_log(f"Error: {err}", "red")
+                self.controller.last_error = None
 
             # Move completed run
             if (not self.controller.is_running
@@ -181,54 +248,57 @@ class BackendActionsMixin:
                     current_folder=self.current_folder
                 )
                 self.controller.last_run_folder = None
-                wipe_folder_contents(self.current_folder)
-
                 if ok and dest and str(dest) != self.last_summary_dest:
                     self.last_summary_dest = str(dest)
                     self._append_log(
                         f"Run complete. Moved to {dest.name}.", "green")
                     self._show_run_summary(run_folder, captures, elapsed)
-                    self._last_run_var.set(
-                        dest.name if dest else "—")
-                    self._last_capture_var.set(
-                        time.strftime("%H:%M:%S"))
+                    
+                self._active_log_path = None
+                wipe_folder_contents(self.current_folder)
+
+                
 
             self.update_control_states()
+            self.update_recovery_panel()
 
             # Progress
-            if duration > 0:
-                pct = max(0.0, min(100.0, elapsed / duration * 100))
-                rem = max(0.0, duration - elapsed)
-            else:
-                pct, rem = 0.0, 0.0
+            rem = max(0.0, duration - elapsed) if duration > 0 else 0.0
+            time_pct = max(0.0, min(100.0, elapsed / duration * 100)) if duration > 0 else 0.0
 
-            self.progress_pct.set(pct)
-            self._draw_donut(pct)
+            # Update live status panel if live time changes
+            if self.controller.is_running and duration > 0:
+                try:
+                    interval = self.get_interval_seconds_from_inputs()
+                    self.estimated_capture_count = int(duration // interval) + 1
+                    finish_ts = time.time() + rem
+                    finish = time.strftime("%a %H:%M", time.localtime(finish_ts))
+                    self.estimated_finish_text.set(f"Est. finish: {finish}")
+
+                except ValueError:
+                    pass
+            else:
+                # Update using values from timing input panel, not live updates
+                self.update_timing_estimates()
+
+            capture_pct = max(0.0, min(100.0, captures / self.estimated_capture_count * 100)) if self.estimated_capture_count > 0 else 0.0
+
+            self.progress_pct.set(capture_pct)
+            self._draw_donut(time_pct)
             self.elapsed.set(format_elapsed(elapsed))
             self.remaining.set(format_elapsed(rem))
 
-            total_est = (int(duration // (st.get("interval_seconds", 1) or 1))
-                         if duration > 0 else 0)
+                
             self.capture_ratio.set(f"{captures} / {self.estimated_capture_count}")
 
-            self.run_folder_var.set(str(run_folder) if run_folder else "—")
-            self.last_img_var.set(str(last_img) if last_img else "—")
+            self.run_folder_var.set(str(run_folder) if run_folder else "-")
+            self.last_img_var.set(str(last_img) if last_img else "-")
 
-            if last_msg and last_msg != self.last_msg_var.get():
-                self.last_msg_var.set(last_msg)
-                if self.controller.is_running:
-                    self._append_log(last_msg, "green")
+            if last_msg and last_msg != self.last_msg_var.get() : # Only update if changed
+                 self.last_msg_var.set(last_msg)
+                 if self.controller.is_running:
+                    self._append_log(last_msg, last_msg_category)
 
-            # System ready indicator
-            ready_text = "⬤  System Ready" if not self.controller.is_running \
-                else "⬤  Running"
-            ready_bg = "#0d2e1a" if not self.controller.is_running else "#1a2e0d"
-            try:
-                self.system_ready_lbl.configure(text=ready_text, bg=ready_bg)
-            except Exception:
-                pass
-
-            self.root.after(200, self.update_status_loop)
 
     def update_control_states(self):
             running  = self.controller.is_running
@@ -263,6 +333,22 @@ class BackendActionsMixin:
                     w.configure(state=adj_state)
                 except Exception:
                     pass
+
+            # End-after-next button (managed separately since it self-disables after click)
+            try:
+                if not running:
+                    self._end_after_next_requested = False
+                    self._end_after_next_btn.configure(
+                        text="End After Next",
+                        fg=WARNING,
+                        state="disabled"
+                    )
+                elif running and not stopping and not self._end_after_next_requested:
+                    self._end_after_next_btn.configure(state="normal")
+                else:
+                    self._end_after_next_btn.configure(state="disabled")
+            except Exception:
+                pass
 
             self.update_recovery_button_state()
 
