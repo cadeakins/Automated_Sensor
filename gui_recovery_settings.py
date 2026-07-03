@@ -463,11 +463,6 @@ class RecoverySettingsMixin:
 
         if self.controller.is_running :
             browse_btn.configure(state="disabled")
-            tk.Label(fr3,
-                     text="(stop experiment to change)",
-                     fg=TEXT_MUTED,
-                     bg=OFF_WHITE,
-                     font=(FONT_BRAND, 9)).pack(side=tk.LEFT, padx=(4,0))
 
         # ── ArUco Error Handling ──────────────────────────────────────────────
                 # ── ArUco Error Handling ──────────────────────────────────────────────
@@ -733,7 +728,7 @@ class RecoverySettingsMixin:
 
         win = tk.Toplevel(self.root)
         win.title("Handle Old Runs")
-        win.geometry("420x250")
+        win.geometry("420x300")
         win.configure(bg=OFF_WHITE)
         win.grab_set()
 

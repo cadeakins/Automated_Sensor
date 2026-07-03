@@ -347,6 +347,7 @@ class CameraPanelMixin:
                 self._toggle_overlay, kind="ghost"
             )
             self._overlay_btn.pack(side=tk.LEFT, padx=(6, 0))
+            self._overlay_btn.configure(state=tk.DISABLED) # Disabled by default
 
             # Laser toggle (right)
             self._laser_btn = tk.Button(
@@ -472,6 +473,7 @@ class CameraPanelMixin:
             self._cam_arrow.configure(fg=TEXT_MUTED)
             self._cam_fr.configure(highlightbackground=CARD_BORDER)
             self._laser_btn.configure(state=tk.NORMAL)
+            self._overlay_btn.configure(state=tk.NORMAL)
             self._preview_toggle_btn.configure(
                 text="⏹  Preview ON",
                 bg=TECHMI_BLUE, fg="white"
@@ -509,6 +511,8 @@ class CameraPanelMixin:
 
             self._laser_btn.configure(text="⬤  Laser: OFF", bg=NAVY_2, fg="#9ca3af",
             state=tk.DISABLED)
+            self._set_overlay(False)
+            self._overlay_btn.configure(state=tk.DISABLED)
             self._preview_toggle_btn.configure(
                 text="▶  Preview OFF",
                 bg="#eef2ff", fg=TECHMI_BLUE
@@ -620,6 +624,14 @@ class CameraPanelMixin:
             else:
                 self._overlay_btn.configure(text="◎  ROI Overlay: OFF",
                                             fg=TEXT_MUTED)
+
+    def _set_overlay(self, enabled: bool) : 
+        self._show_overlay = enabled
+        if enabled : 
+            self._overlay_btn.configure(text="◎  ROI Overlay: ON", fg=SUCCESS)
+        else :
+            self._overlay_btn.configure(text="◎  ROI Overlay: OFF", fg=TEXT_MUTED)
+
 
     def _toggle_laser(self):
             if self._laser is None:
