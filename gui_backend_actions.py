@@ -224,7 +224,6 @@ class BackendActionsMixin:
                 self.alert_popup_open   = True
                 try:
                     messagebox.showwarning("Capture Warning", alert_msg)
-                    self._append_log(f"Warning: {alert_msg}", "red")
                 finally:
                     self.alert_popup_open = False
 

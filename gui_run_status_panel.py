@@ -279,27 +279,28 @@ class RunStatusLogMixin:
         )
         bottom_msg.grid_columnconfigure(0, weight=1)
 
-        # Last controller message.
-        tk.Label(
+        # Single status line: shows error in red when one is active,
+        # otherwise shows the last controller message in muted text.
+        self._status_label = tk.Label(
             bottom_msg,
             textvariable=self.last_msg_var,
             fg=TEXT_MUTED,
             bg=CARD_BG,
             font=(FONT_BRAND, 8),
             anchor="w",
-            wraplength=700
-        ).grid(row=0, column=0, sticky="ew")
+            wraplength=700,
+            justify="left"
+        )
+        self._status_label.grid(row=0, column=0, sticky="ew")
 
-        # Error message, normally just "—".
-        tk.Label(
-            bottom_msg,
-            textvariable=self.error_var,
-            fg=DANGER,
-            bg=CARD_BG,
-            font=(FONT_BRAND, 8),
-            anchor="w",
-            wraplength=700
-        ).grid(row=1, column=0, sticky="ew", pady=(1, 0))
+        def _on_error_change(*_):
+            err = self.error_var.get()
+            if err and err not in ("—", "-"):
+                self._status_label.configure(textvariable=self.error_var, fg=DANGER)
+            else:
+                self._status_label.configure(textvariable=self.last_msg_var, fg=TEXT_MUTED)
+
+        self.error_var.trace_add("write", _on_error_change)
     # ── Donut renderer ────────────────────────────────────────────────────────
     def _draw_donut(self, pct: float):
         """

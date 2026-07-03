@@ -272,6 +272,8 @@ class RecoverySettingsMixin:
         """
         Formats a unix timestamp as 'Today, HH:MM' or 'Mon DD, HH:MM'.
         """
+        if ts is None:
+            return "—"
         dt = datetime.fromtimestamp(ts)
         now = datetime.now()
         if dt.date() == now.date():

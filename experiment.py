@@ -210,7 +210,6 @@ def run_experiment(
                             last_capture_result="ArUco markers missing",
                             last_error=error_text,
                             last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: markers not found",
-                            
                         )
                         finish_reason = "fatal_error"
                         break
@@ -254,7 +253,7 @@ def run_experiment(
         )
         # Re-raise error so ExperimentController knows run failed
         raise
-    
+
     except KeyboardInterrupt:
         print("\nExperiment manually stopped.")
         finish_reason = "user_stopped"
