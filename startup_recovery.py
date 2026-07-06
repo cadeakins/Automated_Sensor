@@ -25,12 +25,16 @@ def find_existing_runs(current_folder="current") :
     for organism_folder in current_path.iterdir() : # Each microorganism folder type
         if not organism_folder.is_dir() : # If item is not a folder
             continue
-        for run_folder in organism_folder.iterdir() : # Each run
-            if not run_folder.is_dir() : 
-                continue # Skip if not a folder
+        try:
+            for run_folder in organism_folder.iterdir() : # Each run
+                if not run_folder.is_dir() : 
+                    continue # Skip if not a folder
 
-            if (run_folder / "run.json").exists() : 
-                run_folders.append(run_folder)
+                if (run_folder / "run.json").exists() : 
+                    run_folders.append(run_folder)
+        except PermissionError:
+            print(f"Skipping {organism_folder}: access denied (Google Drive Sync)")
+            continue 
 
     return run_folders
 
