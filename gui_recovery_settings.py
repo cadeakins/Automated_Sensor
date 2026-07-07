@@ -545,6 +545,8 @@ class RecoverySettingsMixin:
         def _toggle_collab_options()  :
             # Retrain and timeout only make sense in collaborative mode
             state = "disabled" if self._standalone_mode_var.get() else "normal"
+            if self._standalone_mode_var.get() :
+                self._retrain_model_var.set(False)
             retrain_chk.configure(state=state)
             timeout_entry.configure(state=state)
             timeout_label.configure(state=state)
