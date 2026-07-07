@@ -897,7 +897,8 @@ class CameraPanelMixin:
             self._exposure_slider,
             self._gain_slider,
             self._save_btn,
-            self._reset_btn
+            self._reset_btn,
+            self._preview_toggle_btn
         ]
 
         
