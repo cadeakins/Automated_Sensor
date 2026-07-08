@@ -164,9 +164,12 @@ class TimingPanelMixin:
             self.estimated_finish_text.set(f"Est. finish: {finish}")
 
     def get_duration_seconds_from_inputs(self):
-            days = int(self.duration_days.get())
-            hours = int(self.duration_hours.get())
-            mins  = int(self.duration_minutes.get())
+            try:
+                days = int(self.duration_days.get())
+                hours = int(self.duration_hours.get())
+                mins  = int(self.duration_minutes.get())
+            except ValueError:
+                raise ValueError("Duration fields must contain whole numbers only.")
             if days < 0 or hours < 0 or mins < 0:
                 raise ValueError("Duration values cannot be negative.")
             total = days * 86400 + hours * 3600 + mins * 60
@@ -175,8 +178,11 @@ class TimingPanelMixin:
             return total
 
     def get_interval_seconds_from_inputs(self):
-            hours = int(self.interval_hours.get())
-            mins  = int(self.interval_minutes.get())
+            try:
+                hours = int(self.interval_hours.get())
+                mins  = int(self.interval_minutes.get())
+            except ValueError:
+                raise ValueError("Interval fields must contain whole numbers only.")
             if hours < 0 or mins < 0:
                 raise ValueError("Interval values cannot be negative.")
             total = hours * 3600 + mins * 60
