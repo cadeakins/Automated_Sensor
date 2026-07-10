@@ -26,7 +26,7 @@ def load_app_settings() :
         merged.update(loaded)
         return merged
         
-    except Exception: 
+    except Exception as e: 
         print(f"Warning: could not load app_settings.json ({e}). Using defaults.")
         return {**_SETTINGS_DEFAULTS}
     
