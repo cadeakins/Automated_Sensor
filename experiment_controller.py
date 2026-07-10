@@ -353,19 +353,6 @@ class ExperimentController :
             elapsed_seconds=0,
         )
 
-
-
-    def thread_is_alive(self) : 
-        """
-        Function that checks if background thread is still alive
-        """
-
-        if self.thread is None : 
-            return False # Because no active thread
-        
-        return self.thread.is_alive() 
-    
-
     def update_status(self, **kwargs) : 
         """
         Update the shared dictionary

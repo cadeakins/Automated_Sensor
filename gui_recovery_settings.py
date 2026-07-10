@@ -1032,8 +1032,8 @@ class RecoverySettingsMixin:
         win.destroy()
         messagebox.showinfo(
             "Recovery Complete",
-            f"Moved {moved} run(s)")
-        self._append_log(f"Recovery: moved {moved}", "gray")
+            f"Moved {moved} run(s), skipped {skipped} invalid runs")
+        self._append_log(f"Recovery: moved {moved}, skipped {skipped} invalid runs", "gray")
 
     def _recovery_delete(self, win):
         """

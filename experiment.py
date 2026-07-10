@@ -5,7 +5,7 @@ from pathlib import Path
 
 from measurement_capture import capture_measurement
 from image_processing import make_filename
-from run_metadata import atomic_write_json, write_run_metadata, write_done_file, write_comms_file, read_comms_file
+from run_metadata import write_run_metadata, write_done_file, write_comms_file, read_comms_file
 
 
 def run_experiment(

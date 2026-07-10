@@ -158,37 +158,34 @@ def current_folder_has_contents(current_folder="current") :
     return any(current_path.iterdir()) # Return whether the folder contains at least one item
 
 
-def move_valid_runs_to_training(current_folder="current", training_folder="training"):
+def move_valid_runs_to_training(current_folder="current", training_folder="training") : 
     """
-    Moves runs with captured images from current/ to training/.
-    Only cleans up folders that were successfully moved.
-    Never wipes current/ wholesale.
+    Moves current/ runs into training/, valid runs have the status "completed" or "interrupted"
     """
     existing_runs = find_existing_runs(current_folder=current_folder)
     moved_count = 0
     skipped_count = 0
 
-    for run_folder in existing_runs:
+    for run_folder in existing_runs : 
+        # Classify run folder
+        run_state = classify_run_folder(run_folder)
         image_count = len(list(run_folder.glob("*.jpg")))
 
-        # Only move runs that actually have captured data
-        if image_count > 0:
-            move_success = move_run_to_training(
-                run_folder,
-                training_folder=training_folder,
-                current_folder=current_folder
-            )
-            if move_success:
+        # Check if should be moved
+        if run_state in ["completed", "interrupted"] and image_count > 0 : 
+            move_success = move_run_to_training(run_folder, training_folder=training_folder)
+            if move_success :
                 moved_count += 1
-            else:
+            else : 
                 skipped_count += 1
-        else:
+
+        else : 
+            # Runs that should not be moved
             skipped_count += 1
 
-    # Only clean up empty organism folders, never wipe current/ entirely
-    cleanup_empty_organism_folders(current_folder)
 
     return moved_count, skipped_count
+
 
 def cleanup_empty_organism_folders(current_folder="current") : 
     current_path = Path(current_folder)

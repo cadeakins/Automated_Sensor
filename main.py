@@ -52,7 +52,7 @@ def main():
 
     
     # Wait til after DPI setup to import heavy tkinter SensorGUI
-    # As well as root window is set
+    # As well as root window exists
     from gui_app import SensorGUI
 
     s = load_app_settings()
